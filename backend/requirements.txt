@@ -1,0 +1,40 @@
+# WeatherGPT backend dependencies.
+# Pinned to versions verified by the test suite (Python 3.12/3.13).
+# Install with: pip install -r requirements.txt
+
+# --- Web framework ---
+fastapi==0.141.1
+uvicorn[standard]==0.52.4          # ASGI server
+python-multipart==0.0.32           # form/file parsing support
+
+# --- Validation & settings ---
+pydantic==2.13.5
+pydantic-settings==2.15.0          # env-var driven config (.env support)
+email-validator==2.3.0             # EmailStr validation for auth schemas
+
+# --- HTTP client (weather provider) ---
+httpx==0.28.1
+
+# --- LLM (LangChain + Google Gemini Flash) ---
+langchain-google-genai==2.1.4
+langchain-core==0.3.65
+
+# --- Database (SQLAlchemy async: SQLite dev / PostgreSQL prod) ---
+SQLAlchemy[asyncio]==2.0.52
+aiosqlite==0.22.1                  # async SQLite driver (local dev default)
+asyncpg==0.31.0                    # async PostgreSQL driver (production)
+
+# --- Cache ---
+redis==8.1.0                       # async Redis client (in-memory fallback built in)
+
+# --- Authentication ---
+PyJWT==2.13.0                      # JWT access tokens
+passlib==1.7.4                     # password hashing framework
+bcrypt==4.0.1                      # NOTE: pinned - passlib 1.7.4 is incompatible with bcrypt>=4.1
+
+# --- Text to Speech (Edge TTS) ---
+edge-tts==7.2.8
+
+# --- Testing ---
+pytest==9.1.1
+pytest-asyncio==1.4.0
