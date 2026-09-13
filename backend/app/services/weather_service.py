@@ -6,6 +6,7 @@ Provider data is the source of truth; it is normalized into the internal
 weather schemas defined in app.schemas.weather.
 """
 
+import asyncio
 from datetime import datetime
 from typing import Any, Optional
 
@@ -231,31 +232,52 @@ class WeatherService:
     # ------------------------------------------------------------------ #
 
     async def _request(self, url: str, params: dict[str, Any]) -> dict[str, Any]:
-        """Perform a GET request with timeout and error mapping."""
-        try:
-            async with httpx.AsyncClient(
-                timeout=settings.weather_timeout_seconds
-            ) as client:
-                response = await client.get(url, params=params)
-                response.raise_for_status()
-                return response.json()
-        except httpx.TimeoutException as exc:
-            logger.warning("Weather provider timeout: %s", exc)
-            raise WeatherProviderError("The weather service timed out.") from exc
-        except httpx.HTTPStatusError as exc:
-            logger.warning(
-                "Weather provider HTTP %s", exc.response.status_code
-            )
-            raise WeatherProviderError(
-                f"The weather service returned an error "
-                f"(HTTP {exc.response.status_code})."
-            ) from exc
-        except httpx.HTTPError as exc:
-            logger.warning("Weather provider network error: %s", exc)
-            raise WeatherProviderError("Could not reach the weather service.") from exc
-        except ValueError as exc:
-            logger.warning("Weather provider returned invalid JSON: %s", exc)
-            raise WeatherProviderError("The weather service returned invalid data.") from exc
+        """Perform a GET request with timeout and error mapping.
+
+        Transient provider failures (HTTP 429/5xx) are retried with a short
+        backoff before surfacing an error, since shared-egress deployments
+        (e.g. Render free tier) can hit provider rate limits intermittently.
+        """
+        # Provider API key (needed for paid-tier Open-Meteo access when set).
+        if settings.weather_api_key and "api.open-meteo.com" in url:
+            params = {**params, "apikey": settings.weather_api_key}
+        max_attempts = 3
+        async with httpx.AsyncClient(
+            timeout=settings.weather_timeout_seconds
+        ) as client:
+            for attempt in range(max_attempts):
+                try:
+                    response = await client.get(url, params=params)
+                    response.raise_for_status()
+                    return response.json()
+                except httpx.TimeoutException as exc:
+                    logger.warning("Weather provider timeout: %s", exc)
+                    raise WeatherProviderError("The weather service timed out.") from exc
+                except httpx.HTTPStatusError as exc:
+                    status_code = exc.response.status_code
+                    if (
+                        (status_code == 429 or status_code >= 500)
+                        and attempt < max_attempts - 1
+                    ):
+                        logger.warning(
+                            "Weather provider HTTP %s (attempt %d/%d) — retrying",
+                            status_code,
+                            attempt + 1,
+                            max_attempts,
+                        )
+                        await asyncio.sleep(0.75 * (attempt + 1))
+                        continue
+                    logger.warning("Weather provider HTTP %s", status_code)
+                    raise WeatherProviderError(
+                        f"The weather service returned an error (HTTP {status_code})."
+                    ) from exc
+                except httpx.HTTPError as exc:
+                    logger.warning("Weather provider network error: %s", exc)
+                    raise WeatherProviderError("Could not reach the weather service.") from exc
+                except ValueError as exc:
+                    logger.warning("Weather provider returned invalid JSON: %s", exc)
+                    raise WeatherProviderError("The weather service returned invalid data.") from exc
+        raise WeatherProviderError("The weather service returned an error.")  # pragma: no cover
 
     def _normalize_forecast(
         self, payload: dict[str, Any], loc: GeoLocation, days: int

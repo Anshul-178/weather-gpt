@@ -9,14 +9,17 @@ from app.database.database import engine, get_db
 from app.main import app
 from app.services import weather_service as weather_module
 from app.services.cache_service import _MEMORY_CACHE
+from app.services.cached_weather_service import _LAST_GOOD
 
 
 @pytest.fixture(autouse=True)
 def _clear_cache():
     """Ensure a clean in-memory cache for every test."""
     _MEMORY_CACHE.clear()
+    _LAST_GOOD.clear()
     yield
     _MEMORY_CACHE.clear()
+    _LAST_GOOD.clear()
 
 
 @pytest.fixture(autouse=True)

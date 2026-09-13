@@ -5,17 +5,27 @@ Cache failures must never break weather retrieval: on any cache error we
 fetch directly from the provider.
 """
 
+import time
+
 from app.schemas.weather import (
     CurrentWeatherResponse,
     ForecastResponse,
     GeoLocation,
 )
 from app.services.cache_service import cache_service
+from app.services.weather_service import WeatherProviderError
 from app.services.weather_service import weather_service
 from app.utils.geo import cache_key_current, cache_key_forecast, cache_key_geocode
 from app.utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+# Last-good payload store: key -> (expires_at_monotonic, payload).
+# Serves stale weather (up to ~1h old) when the live provider is unreachable
+# or rate-limited, so the AI chat keeps answering instead of always returning
+# the same fallback message.
+_LAST_GOOD: dict[str, tuple[float, dict]] = {}
+_LAST_GOOD_TTL_SECONDS = 3600
 
 
 class CachedWeatherService:
@@ -30,10 +40,18 @@ class CachedWeatherService:
         if cached is not None:
             return CurrentWeatherResponse.model_validate(cached)
 
-        result = await weather_service.get_current(latitude, longitude, location)
+        try:
+            result = await weather_service.get_current(latitude, longitude, location)
+        except WeatherProviderError:
+            stale = self._recall_last_good(key)
+            if stale is not None:
+                logger.warning("Serving last-good CURRENT weather for %s", key)
+                return CurrentWeatherResponse.model_validate(stale)
+            raise
         await self._set_cached(
             key, result, settings_ttl="cache_current_ttl_seconds"
         )
+        self._remember_last_good(key, result)
         return result
 
     async def get_forecast(
@@ -51,12 +69,20 @@ class CachedWeatherService:
         if cached is not None:
             return ForecastResponse.model_validate(cached)
 
-        result = await weather_service.get_forecast(
-            latitude, longitude, days, location, model=model
-        )
+        try:
+            result = await weather_service.get_forecast(
+                latitude, longitude, days, location, model=model
+            )
+        except WeatherProviderError:
+            stale = self._recall_last_good(key)
+            if stale is not None:
+                logger.warning("Serving last-good FORECAST weather for %s", key)
+                return ForecastResponse.model_validate(stale)
+            raise
         await self._set_cached(
             key, result, settings_ttl="cache_forecast_ttl_seconds"
         )
+        self._remember_last_good(key, result)
         return result
 
     async def geocode(self, name: str) -> list[GeoLocation]:
@@ -82,6 +108,27 @@ class CachedWeatherService:
         )
 
     # ------------------------------------------------------------------ #
+
+    def _remember_last_good(self, key: str, value) -> None:
+        """Store a serializable payload as the last-known-good response."""
+        try:
+            _LAST_GOOD[key] = (
+                time.monotonic() + _LAST_GOOD_TTL_SECONDS,
+                value.model_dump(mode="json"),
+            )
+        except Exception:  # noqa: BLE001 - never fail the happy path
+            pass
+
+    def _recall_last_good(self, key: str) -> dict | None:
+        """Return the last-known-good payload for a key, if still fresh."""
+        entry = _LAST_GOOD.get(key)
+        if entry is None:
+            return None
+        expires_at, payload = entry
+        if expires_at < time.monotonic():
+            _LAST_GOOD.pop(key, None)
+            return None
+        return payload
 
     async def _get_cached(self, key: str):
         """Fetch a cached payload; treat any cache failure as a miss."""
