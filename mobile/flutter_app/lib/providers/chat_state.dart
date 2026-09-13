@@ -96,9 +96,9 @@ class ChatState extends ChangeNotifier {
         time: DateTime.now(),
         isError: true,
       ));
-    } catch (_) {
+    } catch (e) {
       messages.add(ChatMessage(
-        text: 'Could not reach the WeatherGPT server. Please try again.',
+        text: 'Could not reach the WeatherGPT server. Please try again.\n\nDebug: $e',
         isUser: false,
         time: DateTime.now(),
         isError: true,

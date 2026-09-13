@@ -65,6 +65,9 @@ class AQIService:
 
     async def _request(self, url: str, params: dict) -> dict:
         """Perform a GET request with timeout and error mapping."""
+        # Provider API key (moves quota from the shared deployment IP to the account).
+        if settings.weather_api_key and "open-meteo.com" in url:
+            params = {**params, "apikey": settings.weather_api_key}
         try:
             async with httpx.AsyncClient(timeout=settings.weather_timeout_seconds) as client:
                 response = await client.get(url, params=params)

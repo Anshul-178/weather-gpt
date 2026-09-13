@@ -267,6 +267,9 @@ class HistoricalService:
 
     async def _request(self, params: dict[str, Any]) -> dict[str, Any]:
         """Perform the archive GET request with timeout and error mapping."""
+        # Provider API key (moves quota from the shared deployment IP to the account).
+        if settings.weather_api_key and "open-meteo.com" in ARCHIVE_BASE_URL:
+            params = {**params, "apikey": settings.weather_api_key}
         try:
             async with httpx.AsyncClient(timeout=settings.weather_timeout_seconds) as client:
                 response = await client.get(ARCHIVE_BASE_URL, params=params)

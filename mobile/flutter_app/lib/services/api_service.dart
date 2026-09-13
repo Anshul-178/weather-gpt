@@ -51,8 +51,12 @@ class ApiService {
       return _handle(response);
     } on TimeoutException {
       throw ApiException('The request timed out. Please try again.');
+    } on ApiException {
+      rethrow; // Surface real backend errors instead of masking them.
     } catch (e) {
-      throw ApiException('Could not reach the WeatherGPT server.');
+      // Log the actual error for debugging
+      debugPrint('API get error: $e');
+      throw ApiException('Could not reach the WeatherGPT server.\n\nDebug: $e');
     }
   }
 
@@ -64,8 +68,12 @@ class ApiService {
       return _handle(response);
     } on TimeoutException {
       throw ApiException('The request timed out. Please try again.');
+    } on ApiException {
+      rethrow; // Surface real backend errors instead of masking them.
     } catch (e) {
-      throw ApiException('Could not reach the WeatherGPT server.');
+      // Log the actual error for debugging
+      debugPrint('API post error: $e');
+      throw ApiException('Could not reach the WeatherGPT server.\n\nDebug: $e');
     }
   }
 
@@ -77,8 +85,12 @@ class ApiService {
       return _handle(response);
     } on TimeoutException {
       throw ApiException('The request timed out. Please try again.');
+    } on ApiException {
+      rethrow; // Surface real backend errors instead of masking them.
     } catch (e) {
-      throw ApiException('Could not reach the WeatherGPT server.');
+      // Log the actual error for debugging
+      debugPrint('API patch error: $e');
+      throw ApiException('Could not reach the WeatherGPT server.\n\nDebug: $e');
     }
   }
 
@@ -95,7 +107,9 @@ class ApiService {
     } on ApiException {
       rethrow;
     } catch (e) {
-      throw ApiException('Could not reach the WeatherGPT server.');
+      // Log the actual error for debugging
+      debugPrint('API delete error: $e');
+      throw ApiException('Could not reach the WeatherGPT server.\n\nDebug: $e');
     }
   }
 

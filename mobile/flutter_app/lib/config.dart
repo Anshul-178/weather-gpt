@@ -50,6 +50,9 @@ class AppConfig {
       return _configuredUrl;
     }
     // Use the deployed backend by default on every platform.
+    // For local development, run the backend and use:
+    //   flutter run --dart-define=API_BASE_URL=http://10.0.2.2:8000
+    // (10.0.2.2 is the Android emulator's alias for localhost)
     if (kIsWeb ||
         Platform.isWindows ||
         Platform.isMacOS ||
@@ -59,5 +62,7 @@ class AppConfig {
     return 'https://weather-gpt-backend-x15k.onrender.com';
   }
 
-  static const Duration requestTimeout = Duration(seconds: 15);
+  // Generous timeout: Render's free tier sleeps when idle, and a cold start
+  // can take 20-50s. Also covers slow LLM-generated chat answers.
+  static const Duration requestTimeout = Duration(seconds: 30);
 }

@@ -161,7 +161,8 @@ class AppState extends ChangeNotifier {
         location!.longitude,
         location!.name,
       );
-    } catch (_) {
+    } catch (e) {
+      debugPrint('AQI fetch error: $e');
       aqi = null;
     }
     loading = false;
@@ -191,8 +192,9 @@ class AppState extends ChangeNotifier {
         return 'Registration failed. Please try again.';
       }
       return await login(email, password);
-    } catch (_) {
-      return 'Could not reach the WeatherGPT server.';
+    } catch (e) {
+      debugPrint('Register error: $e');
+      return 'Could not reach the WeatherGPT server.\n\nDebug: $e';
     }
   }
 
@@ -217,8 +219,9 @@ class AppState extends ChangeNotifier {
       ApiService.instance.setAuthToken(authToken);
       notifyListeners();
       return null;
-    } catch (_) {
-      return 'Could not reach the WeatherGPT server.';
+    } catch (e) {
+      debugPrint('Login error: $e');
+      return 'Could not reach the WeatherGPT server.\n\nDebug: $e';
     }
   }
 
