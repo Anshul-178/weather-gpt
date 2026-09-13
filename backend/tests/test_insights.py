@@ -21,6 +21,8 @@ from app.schemas.weather import (
 from app.services.alert_service import AlertRuleContext, evaluate_alert_rules
 from app.services.aviation_service import aviation_service
 from app.services.crop_advisory_service import crop_advisory_service
+import asyncio
+
 from app.services.historical_service import HistoricalService, HistoricalServiceError
 
 
@@ -100,6 +102,18 @@ async def test_historical_parses_and_aggregates(monkeypatch):
         return _archive_payload(3)
 
     monkeypatch.setattr(HistoricalService, "_request", fake_request)
+    monkeypatch.setattr(HistoricalService, "_request", fake_request)
+    
+    async def _get_cached(self, key):
+        return None
+
+    async def _set_cached(self, key, response):
+        return None
+
+    monkeypatch.setattr(HistoricalService, "_get_cached", _get_cached)
+    monkeypatch.setattr(HistoricalService, "_set_cached", _set_cached)
+    monkeypatch.setattr(HistoricalService, "_remember_last_good", lambda self, key, value: None)
+    monkeypatch.setattr(HistoricalService, "_recall_last_good", lambda self, key: None)
     service = HistoricalService()
     result = await service.get_historical(26.45, 80.33, days=3)
     assert len(result.daily) == 3
@@ -126,6 +140,17 @@ async def test_climate_trend_monthly_aggregation(monkeypatch):
         return payload
 
     monkeypatch.setattr(HistoricalService, "_request", fake_request)
+    
+    async def _get_cached(self, key):
+        return None
+
+    async def _set_cached(self, key, response):
+        return None
+
+    monkeypatch.setattr(HistoricalService, "_get_cached", _get_cached)
+    monkeypatch.setattr(HistoricalService, "_set_cached", _set_cached)
+    monkeypatch.setattr(HistoricalService, "_remember_last_good", lambda self, key, value: None)
+    monkeypatch.setattr(HistoricalService, "_recall_last_good", lambda self, key: None)
     service = HistoricalService()
     result = await service.get_climate_trend(26.45, 80.33, years=2)
     assert len(result.monthly) == 12

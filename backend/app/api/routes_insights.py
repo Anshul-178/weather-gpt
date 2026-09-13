@@ -15,18 +15,24 @@ from app.schemas.insights import (
     AviationBriefingResponse,
     CityOverviewResponse,
     CityWeatherSnapshot,
+    ClimateTrendResponse,
     CropAdvisoryRequest,
     CropAdvisoryResponse,
+    HistoricalWeatherResponse,
 )
 from app.schemas.weather import GeoLocation
 from app.services.aqi_service import AQIServiceError, aqi_service
 from app.services.aviation_service import aviation_service
 from app.services.cached_weather_service import cached_weather_service
 from app.services.crop_advisory_service import crop_advisory_service
+from app.config import settings
+from app.services.cache_service import cache_service
 from app.services.historical_service import (
     HistoricalServiceError,
     historical_service,
 )
+from app.utils.geo import cache_key_historical, cache_key_climate
+
 from app.services.weather_service import (
     WeatherProviderError,
     WeatherValidationError,
@@ -76,6 +82,13 @@ async def get_historical(
             if location_name else None
         return await historical_service.get_historical(latitude, longitude, days, loc)
     except HistoricalServiceError as exc:
+        stale = await _serve_stale_historical(latitude, longitude, days)
+        if stale is not None:
+            logger.warning(
+                "Serving stale historical weather for %.2f,%.2f (%d days)",
+                latitude, longitude, days,
+            )
+            return stale
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
         ) from exc
@@ -94,6 +107,13 @@ async def get_climate_trends(
             if location_name else None
         return await historical_service.get_climate_trend(latitude, longitude, years, loc)
     except HistoricalServiceError as exc:
+        stale = await _serve_stale_climate(latitude, longitude, years)
+        if stale is not None:
+            logger.warning(
+                "Serving stale climate trend for %.2f,%.2f (%d years)",
+                latitude, longitude, years,
+            )
+            return stale
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
         ) from exc
@@ -159,16 +179,46 @@ async def list_nwp_models() -> dict:
     return {"models": NWP_MODELS}
 
 
+async def _serve_stale_historical(
+    latitude: float, longitude: float, days: int
+) -> HistoricalWeatherResponse | None:
+    """Best-effort stale historical payload from cache."""
+    if not settings.serve_stale_on_provider_rate_limit:
+        return None
+    try:
+        payload = await cache_service.get(cache_key_historical(latitude, longitude, days))
+        if payload is None:
+            return None
+        return HistoricalWeatherResponse.model_validate(payload)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Stale historical cache read failed: %s", exc)
+        return None
+
+
+async def _serve_stale_climate(
+    latitude: float, longitude: float, years: int
+) -> ClimateTrendResponse | None:
+    """Best-effort stale climate payload from cache."""
+    if not settings.serve_stale_on_provider_rate_limit:
+        return None
+    try:
+        payload = await cache_service.get(cache_key_climate(latitude, longitude, years))
+        if payload is None:
+            return None
+        return ClimateTrendResponse.model_validate(payload)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Stale climate cache read failed: %s", exc)
+        return None
+
+
 async def _gather_cities(city_list: list[dict[str, object]]) -> list[CityWeatherSnapshot]:
     """Fetch current weather (+AQI) for all cities concurrently."""
-    from app.services.weather_service import weather_service
-
     async def fetch_one(city: dict[str, object]) -> CityWeatherSnapshot:
         name = str(city["name"])
         lat = float(city["latitude"])  # type: ignore[arg-type]
         lon = float(city["longitude"])  # type: ignore[arg-type]
         try:
-            current = await weather_service.get_current(
+            current = await cached_weather_service.get_current(
                 lat, lon, GeoLocation(name=name, latitude=lat, longitude=lon)
             )
             snapshot = CityWeatherSnapshot(

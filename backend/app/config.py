@@ -45,6 +45,9 @@ class Settings(BaseSettings):
     cache_current_ttl_seconds: int = 600  # 5-15 min per technical.md
     cache_forecast_ttl_seconds: int = 1800  # 30-60 min
     cache_geocode_ttl_seconds: int = 21600  # several hours
+    cache_aqi_ttl_seconds: int = 900  # AQI changes slowly; ~15 min
+    cache_historical_ttl_seconds: int = 3600  # past observations are immutable per day
+    cache_climate_ttl_seconds: int = 86400  # climate trends are recomputed rarely
 
     # --- Database ---
     database_url: str = "sqlite+aiosqlite:///./weathergpt.db"
@@ -59,6 +62,11 @@ class Settings(BaseSettings):
     rate_limit_window_seconds: int = 60
     chat_rate_limit_requests: int = 10
     chat_rate_limit_window_seconds: int = 60
+
+    # --- Provider rate-limit mitigation ---
+    # When the weather provider returns 429 (too many requests), serve the
+    # best available cached/stale payload instead of failing the request.
+    serve_stale_on_provider_rate_limit: bool = True
 
     # --- Alerts ---
     alert_scheduler_enabled: bool = False

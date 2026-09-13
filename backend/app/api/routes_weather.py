@@ -17,6 +17,9 @@ from app.services.cached_weather_service import cached_weather_service
 from app.services.comparison_service import comparison_service
 from app.services.location_service import location_service
 from app.services.aqi_service import AQIServiceError, aqi_service
+from app.services.cache_service import cache_service
+from app.utils.geo import cache_key_aqi
+
 from app.services.weather_service import (
     WeatherProviderError,
     WeatherValidationError,
@@ -192,6 +195,10 @@ async def get_aqi(
         validate_longitude(longitude)
         return await aqi_service.get_current_aqi(latitude, longitude, location_name)
     except AQIServiceError as exc:
+        stale = await _serve_stale_aqi(latitude, longitude)
+        if stale is not None:
+            logger.warning("Serving stale AQI for %.2f,%.2f", latitude, longitude)
+            return stale
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
         ) from exc
@@ -199,3 +206,20 @@ async def get_aqi(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
         ) from exc
+
+
+async def _serve_stale_aqi(
+    latitude: float, longitude: float
+) -> AQIResponse | None:
+    """Best-effort stale AQI payload from cache."""
+    if not settings.serve_stale_on_provider_rate_limit:
+        return None
+    try:
+        payload = await cache_service.get(cache_key_aqi(latitude, longitude))
+        if payload is None:
+            return None
+        return AQIResponse.model_validate(payload)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Stale AQI cache read failed: %s", exc)
+        return None
+

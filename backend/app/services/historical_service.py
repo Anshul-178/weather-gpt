@@ -3,10 +3,16 @@
 Uses the Open-Meteo Archive API (free, no key) to fetch past observations.
 Feature 7 of the problem statement: climate trend and historical weather
 analysis for researchers and planners.
+
+Cached to avoid repeated archive API calls for the same coordinate window
+(free-tier rate-limit mitigation).
 """
 
 import asyncio
+import time
 from datetime import date, timedelta
+from typing import Awaitable, Callable, Optional as _Optional
+from unittest.mock import AsyncMock
 from typing import Any, Optional
 
 import httpx
@@ -20,11 +26,20 @@ from app.schemas.insights import (
     HistoricalWeatherResponse,
 )
 from app.schemas.weather import GeoLocation
+from app.services.cache_service import cache_service
+from app.utils.geo import (
+    cache_key_climate,
+    cache_key_historical,
+    round_coord,
+)
 from app.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
 ARCHIVE_BASE_URL = "https://archive-api.open-meteo.com/v1/archive"
+
+_HISTORICAL_LAST_GOOD: dict[str, tuple[float, dict]] = {}
+_HISTORICAL_LAST_GOOD_TTL_SECONDS = 3600
 
 
 class HistoricalServiceError(Exception):
@@ -43,6 +58,11 @@ class HistoricalService:
     ) -> HistoricalWeatherResponse:
         """Return daily historical observations for the past `days` days."""
         days = max(1, min(days, 365))
+        key = cache_key_historical(latitude, longitude, days)
+        cached = await self._get_cached(key)
+        if cached is not None:
+            return HistoricalWeatherResponse.model_validate(cached)
+
         end = date.today() - timedelta(days=1)  # archive has ~5-day lag
         start = end - timedelta(days=days - 1)
 
@@ -55,7 +75,15 @@ class HistoricalService:
             "precipitation_sum,wind_speed_10m_max",
             "timezone": "auto",
         }
-        payload = await self._request(params)
+        try:
+            payload = await self._request(params)
+        except HistoricalServiceError:
+            stale = self._recall_last_good(key)
+            if stale is not None:
+                logger.warning("Serving last-good HISTORICAL weather for %s", key)
+                return HistoricalWeatherResponse.model_validate(stale)
+            raise
+
         loc = location or GeoLocation(
             name=f"{latitude:.2f}, {longitude:.2f}", latitude=latitude, longitude=longitude
         )
@@ -63,13 +91,16 @@ class HistoricalService:
         daily_payload = payload.get("daily") or {}
         points = self._parse_daily(daily_payload)
         stats = self._compute_stats(points, days)
-        return HistoricalWeatherResponse(
+        response = HistoricalWeatherResponse(
             location=loc,
             start_date=start.isoformat(),
             end_date=end.isoformat(),
             daily=points,
             stats=stats,
         )
+        await self._set_cached(key, response)
+        self._remember_last_good(key, response)
+        return response
 
     async def get_climate_trend(
         self,
@@ -80,6 +111,11 @@ class HistoricalService:
     ) -> ClimateTrendResponse:
         """Return monthly climate aggregates over the past N years."""
         years = max(2, min(years, 20))
+        key = cache_key_climate(latitude, longitude, years)
+        cached = await self._get_cached(key)
+        if cached is not None:
+            return ClimateTrendResponse.model_validate(cached)
+
         end = date.today() - timedelta(days=1)
         start = end - timedelta(days=years * 365)
 
@@ -92,7 +128,15 @@ class HistoricalService:
             "precipitation_sum",
             "timezone": "auto",
         }
-        payload = await self._request(params)
+        try:
+            payload = await self._request(params)
+        except HistoricalServiceError:
+            stale = self._recall_last_good(key)
+            if stale is not None:
+                logger.warning("Serving last-good CLIMATE TREND for %s", key)
+                return ClimateTrendResponse.model_validate(stale)
+            raise
+
         loc = location or GeoLocation(
             name=f"{latitude:.2f}, {longitude:.2f}", latitude=latitude, longitude=longitude
         )
@@ -104,7 +148,7 @@ class HistoricalService:
         annual_precip = self._annual_precipitation(monthly, years)
         anomaly = self._current_month_anomaly(monthly)
 
-        return ClimateTrendResponse(
+        response = ClimateTrendResponse(
             location=loc,
             years=years,
             monthly=monthly,
@@ -112,6 +156,59 @@ class HistoricalService:
             annual_precipitation_mm=annual_precip,
             current_month_anomaly_c=anomaly,
         )
+        await self._set_cached(key, response)
+        self._remember_last_good(key, response)
+        return response
+
+    # ------------------------------------------------------------------ #
+    # cache helpers
+    # ------------------------------------------------------------------ #
+
+    async def _get_cached(self, key: str) -> Optional[dict]:
+        """Fetch a cached payload; treat any cache failure as a miss."""
+        try:
+            return await cache_service.get(key)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Historical cache GET failed for %s: %s", key, exc)
+            return None
+
+    async def _set_cached(
+        self, key: str, response: HistoricalWeatherResponse | ClimateTrendResponse
+    ) -> None:
+        """Store a payload in cache; failures are non-fatal."""
+        try:
+            if isinstance(response, HistoricalWeatherResponse):
+                ttl = settings.cache_historical_ttl_seconds
+            else:
+                ttl = settings.cache_climate_ttl_seconds
+            await cache_service.set(
+                key,
+                response.model_dump(mode="json"),
+                ttl_seconds=ttl,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Historical cache SET failed for %s: %s", key, exc)
+
+    def _remember_last_good(self, key: str, value) -> None:
+        """Store a serializable payload as the last-known-good response."""
+        try:
+            _HISTORICAL_LAST_GOOD[key] = (
+                time.monotonic() + _HISTORICAL_LAST_GOOD_TTL_SECONDS,
+                value.model_dump(mode="json"),
+            )
+        except Exception:  # noqa: BLE001 - never fail the happy path
+            pass
+
+    def _recall_last_good(self, key: str) -> dict | None:
+        """Return the last-known-good payload for a key, if still fresh."""
+        entry = _HISTORICAL_LAST_GOOD.get(key)
+        if entry is None:
+            return None
+        expires_at, payload = entry
+        if expires_at < time.monotonic():
+            _HISTORICAL_LAST_GOOD.pop(key, None)
+            return None
+        return payload
 
     # ------------------------------------------------------------------ #
     # internals
@@ -266,7 +363,11 @@ class HistoricalService:
         return None
 
     async def _request(self, params: dict[str, Any]) -> dict[str, Any]:
-        """Perform the archive GET request with timeout and error mapping."""
+        """Perform the archive GET request with timeout and error mapping.
+
+        HTTP 429 is retried once with backoff. On persistent provider errors
+        the caller falls back to cache / last-good payload.
+        """
         # Provider API key (moves quota from the shared deployment IP to the account).
         if settings.weather_api_key and "open-meteo.com" in ARCHIVE_BASE_URL:
             params = {**params, "apikey": settings.weather_api_key}
