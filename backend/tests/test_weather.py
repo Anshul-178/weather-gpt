@@ -1,11 +1,17 @@
 """Weather service and endpoint tests."""
 
+import asyncio
+
 import httpx
 import pytest
 
 from app.services import weather_service as weather_module
 from app.services.cached_weather_service import cached_weather_service
-from app.services.weather_service import WeatherService, WeatherProviderError
+from app.services.weather_service import (
+    WeatherProviderError,
+    WeatherRateLimitError,
+    WeatherService,
+)
 from tests.conftest import _mock_provider
 
 
@@ -57,6 +63,85 @@ async def test_current_endpoint_cached_second_call(
     await client.get("/weather/current?latitude=26.4499&longitude=80.3319")
     await client.get("/weather/current?latitude=26.4499&longitude=80.3319")
     assert calls["count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_concurrent_cache_misses_share_one_provider_request(
+    monkeypatch, provider_current_payload
+):
+    """Concurrent requests for one location must be coalesced."""
+    calls = {"count": 0}
+
+    async def fake_request(self, url, params):
+        calls["count"] += 1
+        await asyncio.sleep(0)
+        return provider_current_payload
+
+    monkeypatch.setattr(weather_module.WeatherService, "_request", fake_request)
+    results = await asyncio.gather(
+        cached_weather_service.get_current(26.4499, 80.3319),
+        cached_weather_service.get_current(26.4499, 80.3319),
+    )
+
+    assert calls["count"] == 1
+    assert results[0].current.temperature == results[1].current.temperature == 32.4
+
+
+@pytest.mark.asyncio
+async def test_provider_429_serves_last_good_weather(
+    monkeypatch, provider_current_payload
+):
+    """An upstream 429 returns cached last-good weather instead of an error."""
+    from app.services import cached_weather_service as cached_module
+    from app.services.cache_service import cache_service
+
+    monkeypatch.setattr(cached_module, "_PROVIDER_RATE_LIMITED_UNTIL", 0.0)
+    _mock_provider(monkeypatch, provider_current_payload, {})
+    first = await cached_weather_service.get_current(26.4499, 80.3319)
+    await cache_service.clear_memory()
+
+    async def rate_limited(*args, **kwargs):
+        raise WeatherRateLimitError("provider rate limited")
+
+    monkeypatch.setattr(weather_module.weather_service, "get_current", rate_limited)
+    second = await cached_weather_service.get_current(26.4499, 80.3319)
+
+    assert second.current.temperature == first.current.temperature == 32.4
+
+
+@pytest.mark.asyncio
+async def test_weather_provider_maps_429_to_rate_limit_error(monkeypatch):
+    """HTTP 429 is classified separately so the cache can start cooldown."""
+
+    class _Response:
+        status_code = 429
+
+        def raise_for_status(self):
+            request = httpx.Request("GET", "https://api.open-meteo.com/v1/forecast")
+            raise httpx.HTTPStatusError("rate limited", request=request, response=self)
+
+    class _Client:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc_info):
+            return False
+
+        async def get(self, *args, **kwargs):
+            return _Response()
+
+    class _FakeHTTPX:
+        AsyncClient = _Client
+        TimeoutException = httpx.TimeoutException
+        HTTPStatusError = httpx.HTTPStatusError
+        HTTPError = httpx.HTTPError
+
+    monkeypatch.setattr(weather_module, "httpx", _FakeHTTPX)
+    with pytest.raises(WeatherRateLimitError):
+        await WeatherService()._request("https://api.open-meteo.com/v1/forecast", {})
 
 
 @pytest.mark.asyncio

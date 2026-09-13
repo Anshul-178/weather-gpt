@@ -72,6 +72,8 @@ class Settings(BaseSettings):
     # When the weather provider returns 429 (too many requests), serve the
     # best available cached/stale payload instead of failing the request.
     serve_stale_on_provider_rate_limit: bool = True
+    # Do not immediately retry Open-Meteo after it has sent a 429 response.
+    weather_rate_limit_cooldown_seconds: int = 60
 
     # --- Alerts ---
     alert_scheduler_enabled: bool = False

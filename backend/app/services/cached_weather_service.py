@@ -5,15 +5,17 @@ Cache failures must never break weather retrieval: on any cache error we
 fetch directly from the provider.
 """
 
+import asyncio
 import time
 
+from app.config import settings
 from app.schemas.weather import (
     CurrentWeatherResponse,
     ForecastResponse,
     GeoLocation,
 )
 from app.services.cache_service import cache_service
-from app.services.weather_service import WeatherProviderError
+from app.services.weather_service import WeatherProviderError, WeatherRateLimitError
 from app.services.weather_service import weather_service
 from app.utils.geo import cache_key_current, cache_key_forecast, cache_key_geocode
 from app.utils.logging import get_logger
@@ -27,6 +29,15 @@ logger = get_logger(__name__)
 _LAST_GOOD: dict[str, tuple[float, dict]] = {}
 _LAST_GOOD_TTL_SECONDS = 3600
 
+# Avoid a thundering herd when several clients request the same location after
+# its cache entry expires. A provider 429 is then one failed request, not one
+# failed request per waiting client.
+_IN_FLIGHT_LOCKS: dict[str, asyncio.Lock] = {}
+
+# Do not immediately retry the provider after it has explicitly rate-limited
+# us. This is process-local; Redis still provides the normal shared cache.
+_PROVIDER_RATE_LIMITED_UNTIL = 0.0
+
 
 class CachedWeatherService:
     """Weather retrieval with Redis/in-memory caching."""
@@ -36,23 +47,32 @@ class CachedWeatherService:
     ) -> CurrentWeatherResponse:
         """Return current weather, served from cache when fresh."""
         key = cache_key_current(latitude, longitude)
-        cached = await self._get_cached(key)
-        if cached is not None:
-            return CurrentWeatherResponse.model_validate(cached)
+        async with self._lock_for(key):
+            cached = await self._get_cached(key)
+            if cached is not None:
+                return CurrentWeatherResponse.model_validate(cached)
 
-        try:
-            result = await weather_service.get_current(latitude, longitude, location)
-        except WeatherProviderError:
-            stale = self._recall_last_good(key)
-            if stale is not None:
-                logger.warning("Serving last-good CURRENT weather for %s", key)
-                return CurrentWeatherResponse.model_validate(stale)
-            raise
-        await self._set_cached(
-            key, result, settings_ttl="cache_current_ttl_seconds"
-        )
-        self._remember_last_good(key, result)
-        return result
+            try:
+                self._raise_if_provider_cooldown()
+                result = await weather_service.get_current(latitude, longitude, location)
+            except WeatherRateLimitError:
+                self._start_provider_cooldown()
+                stale = self._recall_last_good(key)
+                if stale is not None and settings.serve_stale_on_provider_rate_limit:
+                    logger.warning("Serving last-good CURRENT weather for %s", key)
+                    return CurrentWeatherResponse.model_validate(stale)
+                raise
+            except WeatherProviderError:
+                stale = self._recall_last_good(key)
+                if stale is not None:
+                    logger.warning("Serving last-good CURRENT weather for %s", key)
+                    return CurrentWeatherResponse.model_validate(stale)
+                raise
+            await self._set_cached(
+                key, result, settings_ttl="cache_current_ttl_seconds"
+            )
+            self._remember_last_good(key, result)
+            return result
 
     async def get_forecast(
         self,
@@ -65,25 +85,34 @@ class CachedWeatherService:
         """Return forecast, served from cache when fresh."""
         days = max(1, min(days, 16))
         key = cache_key_forecast(latitude, longitude, days, model)
-        cached = await self._get_cached(key)
-        if cached is not None:
-            return ForecastResponse.model_validate(cached)
+        async with self._lock_for(key):
+            cached = await self._get_cached(key)
+            if cached is not None:
+                return ForecastResponse.model_validate(cached)
 
-        try:
-            result = await weather_service.get_forecast(
-                latitude, longitude, days, location, model=model
+            try:
+                self._raise_if_provider_cooldown()
+                result = await weather_service.get_forecast(
+                    latitude, longitude, days, location, model=model
+                )
+            except WeatherRateLimitError:
+                self._start_provider_cooldown()
+                stale = self._recall_last_good(key)
+                if stale is not None and settings.serve_stale_on_provider_rate_limit:
+                    logger.warning("Serving last-good FORECAST weather for %s", key)
+                    return ForecastResponse.model_validate(stale)
+                raise
+            except WeatherProviderError:
+                stale = self._recall_last_good(key)
+                if stale is not None:
+                    logger.warning("Serving last-good FORECAST weather for %s", key)
+                    return ForecastResponse.model_validate(stale)
+                raise
+            await self._set_cached(
+                key, result, settings_ttl="cache_forecast_ttl_seconds"
             )
-        except WeatherProviderError:
-            stale = self._recall_last_good(key)
-            if stale is not None:
-                logger.warning("Serving last-good FORECAST weather for %s", key)
-                return ForecastResponse.model_validate(stale)
-            raise
-        await self._set_cached(
-            key, result, settings_ttl="cache_forecast_ttl_seconds"
-        )
-        self._remember_last_good(key, result)
-        return result
+            self._remember_last_good(key, result)
+            return result
 
     async def geocode(self, name: str) -> list[GeoLocation]:
         """Geocode a place name with long-TTL caching."""
@@ -137,6 +166,25 @@ class CachedWeatherService:
         except Exception as exc:  # noqa: BLE001
             logger.warning("Cache GET failed for %s: %s", key, exc)
             return None
+
+    def _lock_for(self, key: str) -> asyncio.Lock:
+        """Return the per-cache-key lock used for request coalescing."""
+        return _IN_FLIGHT_LOCKS.setdefault(key, asyncio.Lock())
+
+    def _raise_if_provider_cooldown(self) -> None:
+        """Avoid another provider request while a rate-limit cooldown is active."""
+        if _PROVIDER_RATE_LIMITED_UNTIL <= time.monotonic():
+            return
+        raise WeatherRateLimitError(
+            "The weather provider is temporarily rate-limited. Please try again shortly."
+        )
+
+    def _start_provider_cooldown(self) -> None:
+        """Start the cooldown after an upstream 429 response."""
+        global _PROVIDER_RATE_LIMITED_UNTIL
+        _PROVIDER_RATE_LIMITED_UNTIL = time.monotonic() + max(
+            1, int(settings.weather_rate_limit_cooldown_seconds)
+        )
 
     async def _set_cached(self, key: str, value, settings_ttl: str) -> None:
         """Store a payload in cache; failures are non-fatal."""

@@ -63,6 +63,10 @@ class WeatherProviderError(Exception):
     """Weather provider failed (network, HTTP error, bad payload)."""
 
 
+class WeatherRateLimitError(WeatherProviderError):
+    """The weather provider rejected the request because of rate limiting."""
+
+
 class WeatherValidationError(Exception):
     """Provider returned data that could not be normalized."""
 
@@ -234,9 +238,10 @@ class WeatherService:
     async def _request(self, url: str, params: dict[str, Any]) -> dict[str, Any]:
         """Perform a GET request with timeout and error mapping.
 
-        Transient provider failures (HTTP 429/5xx) are retried with a short
-        backoff before surfacing an error, since shared-egress deployments
-        (e.g. Render free tier) can hit provider rate limits intermittently.
+        Transient provider failures (HTTP 5xx) are retried with a short
+        backoff. HTTP 429 is surfaced immediately so the cache layer can enter
+        a cooldown and serve the last known good weather instead of creating
+        more rate-limited requests.
         """
         # Provider API key (needed for paid-tier Open-Meteo access when set).
         if settings.weather_api_key and "api.open-meteo.com" in url:
@@ -255,10 +260,12 @@ class WeatherService:
                     raise WeatherProviderError("The weather service timed out.") from exc
                 except httpx.HTTPStatusError as exc:
                     status_code = exc.response.status_code
-                    if (
-                        (status_code == 429 or status_code >= 500)
-                        and attempt < max_attempts - 1
-                    ):
+                    if status_code == 429:
+                        logger.warning("Weather provider HTTP 429 (rate limited)")
+                        raise WeatherRateLimitError(
+                            "The weather provider is temporarily rate-limited."
+                        ) from exc
+                    if status_code >= 500 and attempt < max_attempts - 1:
                         logger.warning(
                             "Weather provider HTTP %s (attempt %d/%d) — retrying",
                             status_code,
