@@ -401,19 +401,31 @@ class AIService:
     def _answer_activity(self, result: dict, where: str) -> str:
         """Answer activity questions using the deterministic engine result."""
         rating = str(result.get("rating", "unknown")).lower()
-        score = result.get("score", 0)
         activity = str(result.get("activity", "this activity")).replace("_", " ")
         reasons = result.get("reasons") or []
-        reason_text = (". ".join(reasons[:3])) if reasons else ""
+        reason_text = self._natural_activity_reason(reasons)
         if any(word in rating for word in ("good", "excellent", "great", "ideal")):
-            opener = f"{activity.capitalize()} {where} looks great right now — I'd rate it {score}/100 ({rating})."
+            opener = f"{activity.capitalize()} {where} looks like a good option today."
         elif any(word in rating for word in ("poor", "bad", "harsh")):
-            opener = f"Honestly, not the best day for {activity} {where} — {score}/100 ({rating})."
+            opener = f"I'd probably skip {activity} {where} today — the conditions aren't very comfortable."
         else:
-            opener = f"{activity.capitalize()} {where} is doable but not perfect — {score}/100 ({rating})."
+            opener = f"{activity.capitalize()} {where} is doable today, but it may not be especially comfortable."
         if reason_text:
             return f"{opener} {reason_text}"
         return opener
+
+    @staticmethod
+    def _natural_activity_reason(reasons: list) -> str:
+        """Convert engine labels into a short, human-sounding explanation."""
+        if not reasons:
+            return ""
+        text = str(reasons[0])
+        text = text.replace(" (favorable)", "").replace(" (unfavorable)", "")
+        if ": " in text:
+            text = text.split(": ", 1)[1]
+        if text.endswith("."):
+            return text
+        return text + "."
 
     def _window_points(self, forecast, period):
         """Select hourly points matching a period keyword."""
