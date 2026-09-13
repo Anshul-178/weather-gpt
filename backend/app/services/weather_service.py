@@ -209,7 +209,7 @@ class WeatherService:
     async def geocode(self, name: str, count: int = 5) -> list[GeoLocation]:
         """Search for places by name using the provider geocoding API."""
         params = {"name": name, "count": count, "language": "en", "format": "json"}
-        payload = await self._request(f"{settings.geocoding_base_url}/search", params)
+        payload = await self._request(f"{settings.geocoding_api_base_url}/search", params)
         results = payload.get("results") or []
         locations: list[GeoLocation] = []
         for item in results:

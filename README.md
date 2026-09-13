@@ -103,6 +103,20 @@ cp .env.example .env                              # fill in values as needed
 By default the backend uses SQLite (`./weathergpt.db`) and an in-memory cache — no PostgreSQL/Redis
 needed for local development.
 
+## Weather provider endpoints
+
+The backend uses [Open-Meteo](https://open-meteo.com) by default. No API key is required for
+non-commercial use. The exact provider endpoints used are:
+
+| Provider | Endpoint |
+|---|---|
+| Weather Forecast API | `https://api.open-meteo.com/v1/forecast` |
+| Air Quality API | `https://air-quality-api.open-meteo.com/v1/air-quality` |
+| Geocoding API | `https://geocoding-api.open-meteo.com/v1/search` |
+
+These are configured through `backend/.env.example`. If you switch providers, update
+`WEATHER_API_BASE_URL` / `AIR_QUALITY_API_BASE_URL` / `GEOCODING_API_BASE_URL` there.
+
 ## Environment variables
 
 See `backend/.env.example` (placeholders only — never commit a real `.env`):
@@ -110,6 +124,8 @@ See `backend/.env.example` (placeholders only — never commit a real `.env`):
 | Variable | Purpose |
 |---|---|
 | `WEATHER_API_KEY` / `WEATHER_API_BASE_URL` | Weather provider (Open-Meteo default, key optional) |
+| `AIR_QUALITY_API_BASE_URL` | Open-Meteo Air Quality API base URL |
+| `GEOCODING_API_BASE_URL` | Open-Meteo Geocoding API base URL |
 | `LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL` | Any OpenAI-compatible LLM (optional) |
 | `DATABASE_URL` | `postgresql+asyncpg://…` in production; SQLite default in dev |
 | `REDIS_URL` | Redis cache; falls back to in-memory if unreachable |
