@@ -49,10 +49,18 @@ class AppConfig {
     if (_configuredUrl.isNotEmpty) {
       return _configuredUrl;
     }
-    // Use the deployed backend by default on every platform.
-    // For local development, run the backend and use:
-    //   flutter run --dart-define=API_BASE_URL=http://10.0.2.2:8000
-    // (10.0.2.2 is the Android emulator's alias for localhost)
+    // Debug builds should use the local API so backend changes are visible
+    // immediately. Release builds keep using the deployed service.
+    // (10.0.2.2 is the Android emulator's alias for the host machine.)
+    if (kDebugMode) {
+      if (kIsWeb ||
+          Platform.isWindows ||
+          Platform.isMacOS ||
+          Platform.isLinux) {
+        return 'http://127.0.0.1:8000';
+      }
+      return 'http://10.0.2.2:8000';
+    }
     if (kIsWeb ||
         Platform.isWindows ||
         Platform.isMacOS ||

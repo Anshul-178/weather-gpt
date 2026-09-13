@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import 'config.dart';
 import 'providers/app_state.dart';
 import 'providers/chat_state.dart';
 import 'screens/advisories_screen.dart';
@@ -9,7 +10,9 @@ import 'screens/forecast_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/settings_screen.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await AppConfig.init();
   runApp(const WeatherGPTApp());
 }
 

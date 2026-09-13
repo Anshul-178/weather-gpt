@@ -100,6 +100,10 @@ cp .env.example .env                              # fill in values as needed
 - API: http://127.0.0.1:8000
 - Interactive docs (Swagger): http://127.0.0.1:8000/docs
 
+Debug Flutter builds now use this local API automatically on web/desktop. For
+Android emulators, use `http://10.0.2.2:8000`; a release build continues to use
+the deployed backend unless `API_BASE_URL` is provided.
+
 By default the backend uses SQLite (`./weathergpt.db`) and an in-memory cache — no PostgreSQL/Redis
 needed for local development.
 
