@@ -1,13 +1,14 @@
 """Weather service.
 
-Isolates the weather provider (Open-Meteo by default) behind this module.
+Isolates the weather provider (Open-Meteo by default, OpenWeather supported)
+behind this module.
 No provider-specific logic should spread into routes or other services.
 Provider data is the source of truth; it is normalized into the internal
 weather schemas defined in app.schemas.weather.
 """
 
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 import httpx
@@ -102,6 +103,17 @@ class WeatherService:
         self, latitude: float, longitude: float, location: Optional[GeoLocation] = None
     ) -> CurrentWeatherResponse:
         """Return normalized current weather for coordinates."""
+        if self._uses_openweathermap():
+            payload = await self._request(
+                f"{self._provider_base_url()}/weather",
+                {"lat": latitude, "lon": longitude, "units": "metric"},
+            )
+            response = self._normalize_openweathermap_current(
+                payload, latitude, longitude, location
+            )
+            self._validate_response(response)
+            return response
+
         params = {
             "latitude": latitude,
             "longitude": longitude,
@@ -168,7 +180,20 @@ class WeatherService:
         `model` selects a specific NWP model (e.g. gfs_seamless, ecmwf_ifs025,
         icon_seamless) — see /weather/models for available options.
         """
-        days = max(1, min(days, 16))
+        # OpenWeather's free 5-day endpoint provides 3-hour forecast points;
+        # Open-Meteo supports the existing 16-day route contract.
+        max_days = 5 if self._uses_openweathermap() else 16
+        days = max(1, min(days, max_days))
+        if self._uses_openweathermap():
+            payload = await self._request(
+                f"{self._provider_base_url()}/forecast",
+                {"lat": latitude, "lon": longitude, "units": "metric"},
+            )
+            loc = self._openweathermap_location(payload, latitude, longitude, location)
+            response = self._normalize_openweathermap_forecast(payload, loc, days)
+            self._validate_response(response)
+            return response
+
         params = {
             "latitude": latitude,
             "longitude": longitude,
@@ -235,6 +260,180 @@ class WeatherService:
     # internals
     # ------------------------------------------------------------------ #
 
+    def _uses_openweathermap(self) -> bool:
+        """Return whether the configured forecast provider is OpenWeather."""
+        return "openweathermap.org" in settings.weather_api_base_url.lower()
+
+    def _provider_base_url(self) -> str:
+        """Return the configured provider base URL without a trailing slash."""
+        return settings.weather_api_base_url.rstrip("/")
+
+    def _openweathermap_location(
+        self,
+        payload: dict[str, Any],
+        latitude: float,
+        longitude: float,
+        location: Optional[GeoLocation],
+    ) -> GeoLocation:
+        """Build a normalized location from OpenWeather metadata."""
+        if location is not None:
+            return location
+        metadata = payload.get("city") or payload
+        coordinates = metadata.get("coord") or {}
+        city_name = metadata.get("name") or f"{latitude:.2f}, {longitude:.2f}"
+        return GeoLocation(
+            name=str(city_name),
+            latitude=float(coordinates.get("lat", latitude)),
+            longitude=float(coordinates.get("lon", longitude)),
+            country=(metadata.get("sys") or {}).get("country")
+            or metadata.get("country"),
+        )
+
+    def _normalize_openweathermap_current(
+        self,
+        payload: dict[str, Any],
+        latitude: float,
+        longitude: float,
+        location: Optional[GeoLocation],
+    ) -> CurrentWeatherResponse:
+        """Normalize OpenWeather's current-weather response."""
+        current = payload.get("main") or {}
+        weather = (payload.get("weather") or [{}])[0]
+        wind = payload.get("wind") or {}
+        clouds = payload.get("clouds") or {}
+        rain = payload.get("rain") or {}
+        timestamp = datetime.fromtimestamp(
+            float(payload.get("dt", datetime.now(tz=timezone.utc).timestamp())),
+            tz=timezone.utc,
+        )
+        sunrise = (payload.get("sys") or {}).get("sunrise")
+        sunset = (payload.get("sys") or {}).get("sunset")
+        is_day = None
+        if sunrise is not None and sunset is not None:
+            is_day = sunrise <= payload.get("dt", 0) <= sunset
+
+        normalized = CurrentWeather(
+            temperature=current.get("temp"),
+            feels_like=current.get("feels_like"),
+            humidity=current.get("humidity"),
+            wind_speed=self._metres_per_second_to_kmh(wind.get("speed")),
+            wind_direction=wind.get("deg"),
+            wind_direction_compass=wind_direction_to_compass(wind.get("deg")),
+            pressure=current.get("pressure"),
+            precipitation=rain.get("1h", rain.get("3h")),
+            cloud_cover=clouds.get("all"),
+            visibility=self._metres_to_km(payload.get("visibility")),
+            condition=weather.get("description") or weather.get("main"),
+            weather_code=weather.get("id"),
+            is_day=is_day,
+        )
+        return CurrentWeatherResponse(
+            location=self._openweathermap_location(
+                payload, latitude, longitude, location
+            ),
+            current=normalized,
+            timestamp=timestamp,
+        )
+
+    def _normalize_openweathermap_forecast(
+        self, payload: dict[str, Any], loc: GeoLocation, days: int
+    ) -> ForecastResponse:
+        """Normalize OpenWeather's 3-hour forecast into daily/hourly points."""
+        entries = payload.get("list") or []
+        grouped: dict[str, list[dict[str, Any]]] = {}
+        for entry in entries:
+            date_time = _parse_iso(entry.get("dt_txt"))
+            if date_time is None:
+                continue
+            grouped.setdefault(date_time.date().isoformat(), []).append(entry)
+
+        daily_points: list[DailyPoint] = []
+        hourly_points: list[HourlyPoint] = []
+        for date_str, day_entries in list(grouped.items())[:days]:
+            representative = min(
+                day_entries,
+                key=lambda item: abs(
+                    (_parse_iso(item.get("dt_txt")) or datetime.min).hour - 12
+                ),
+            )
+            representative_weather = (representative.get("weather") or [{}])[0]
+            temperatures = [
+                item.get("main", {}).get("temp")
+                for item in day_entries
+                if item.get("main", {}).get("temp") is not None
+            ]
+            probabilities = [float(item.get("pop", 0)) * 100 for item in day_entries]
+            wind_speeds = [
+                self._metres_per_second_to_kmh(item.get("wind", {}).get("speed"))
+                for item in day_entries
+            ]
+            wind_speeds = [value for value in wind_speeds if value is not None]
+            precipitation = sum(
+                self._forecast_precipitation(item) for item in day_entries
+            )
+            daily_points.append(
+                DailyPoint(
+                    date=date_str,
+                    temperature_max=max(temperatures) if temperatures else None,
+                    temperature_min=min(temperatures) if temperatures else None,
+                    precipitation_sum=precipitation or None,
+                    precipitation_probability=max(probabilities) if probabilities else None,
+                    wind_speed_max=max(wind_speeds) if wind_speeds else None,
+                    condition=representative_weather.get("description")
+                    or representative_weather.get("main"),
+                    weather_code=representative_weather.get("id"),
+                )
+            )
+
+            for item in day_entries:
+                parsed_time = _parse_iso(item.get("dt_txt"))
+                if parsed_time is None:
+                    continue
+                main = item.get("main") or {}
+                item_weather = (item.get("weather") or [{}])[0]
+                hourly_points.append(
+                    HourlyPoint(
+                        time=parsed_time,
+                        temperature=main.get("temp"),
+                        feels_like=main.get("feels_like"),
+                        precipitation_probability=float(item.get("pop", 0)) * 100,
+                        precipitation=self._forecast_precipitation(item),
+                        wind_speed=self._metres_per_second_to_kmh(
+                            (item.get("wind") or {}).get("speed")
+                        ),
+                        humidity=main.get("humidity"),
+                        condition=item_weather.get("description")
+                        or item_weather.get("main"),
+                        weather_code=item_weather.get("id"),
+                        visibility=self._metres_to_km(item.get("visibility")),
+                    )
+                )
+
+        return ForecastResponse(location=loc, forecast=daily_points, hourly=hourly_points)
+
+    @staticmethod
+    def _metres_per_second_to_kmh(value: Any) -> Optional[float]:
+        """Convert OpenWeather wind speed from m/s to km/h."""
+        if value is None:
+            return None
+        return float(value) * 3.6
+
+    @staticmethod
+    def _metres_to_km(value: Any) -> Optional[float]:
+        """Convert metres to kilometres."""
+        if value is None:
+            return None
+        return round(float(value) / 1000.0, 1)
+
+    @staticmethod
+    def _forecast_precipitation(entry: dict[str, Any]) -> float:
+        """Read precipitation from an OpenWeather forecast interval."""
+        rain = entry.get("rain") or {}
+        snow = entry.get("snow") or {}
+        return float(rain.get("3h", rain.get("1h", 0))) + float(
+            snow.get("3h", snow.get("1h", 0))
+        )
+
     async def _request(self, url: str, params: dict[str, Any]) -> dict[str, Any]:
         """Perform a GET request with timeout and error mapping.
 
@@ -243,8 +442,18 @@ class WeatherService:
         a cooldown and serve the last known good weather instead of creating
         more rate-limited requests.
         """
+        if "openweathermap.org" in url:
+            if not settings.weather_api_key:
+                raise WeatherProviderError(
+                    "OpenWeather is selected but WEATHER_API_KEY is not configured."
+                )
+            params = {**params, "appid": settings.weather_api_key}
         # Provider API key (needed for paid-tier Open-Meteo access when set).
-        if settings.weather_api_key and "api.open-meteo.com" in url:
+        elif (
+            settings.weather_api_key
+            and "api.open-meteo.com" in url
+            and "api.open-meteo.com" in settings.weather_api_base_url
+        ):
             params = {**params, "apikey": settings.weather_api_key}
         max_attempts = 3
         async with httpx.AsyncClient(

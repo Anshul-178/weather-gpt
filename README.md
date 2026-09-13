@@ -109,8 +109,11 @@ needed for local development.
 
 ## Weather provider endpoints
 
-The backend uses [Open-Meteo](https://open-meteo.com) by default. No API key is required for
-non-commercial use. The exact provider endpoints used are:
+The backend uses [Open-Meteo](https://open-meteo.com) by default, and also supports
+[OpenWeather](https://openweathermap.org/api) for current conditions and the 5-day forecast.
+OpenWeather requires an API key and returns forecast data at 3-hour intervals.
+
+Default Open-Meteo endpoints:
 
 | Provider | Endpoint |
 |---|---|
@@ -118,8 +121,14 @@ non-commercial use. The exact provider endpoints used are:
 | Air Quality API | `https://air-quality-api.open-meteo.com/v1/air-quality` |
 | Geocoding API | `https://geocoding-api.open-meteo.com/v1/search` |
 
-These are configured through `backend/.env.example`. If you switch providers, update
-`WEATHER_API_BASE_URL` / `AIR_QUALITY_API_BASE_URL` / `GEOCODING_API_BASE_URL` there.
+To use OpenWeather, set these values in `backend/.env`:
+
+```dotenv
+WEATHER_API_BASE_URL=https://api.openweathermap.org/data/2.5
+WEATHER_API_KEY=your_openweather_appid
+```
+
+The backend keeps Open-Meteo for geocoding and AQI unless those services are separately changed.
 
 ## Environment variables
 
@@ -127,7 +136,7 @@ See `backend/.env.example` (placeholders only — never commit a real `.env`):
 
 | Variable | Purpose |
 |---|---|
-| `WEATHER_API_KEY` / `WEATHER_API_BASE_URL` | Weather provider (Open-Meteo default, key optional) |
+| `WEATHER_API_KEY` / `WEATHER_API_BASE_URL` | Weather provider; OpenWeather requires a key |
 | `AIR_QUALITY_API_BASE_URL` | Open-Meteo Air Quality API base URL |
 | `GEOCODING_API_BASE_URL` | Open-Meteo Geocoding API base URL |
 | `LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL` | Any OpenAI-compatible LLM (optional) |

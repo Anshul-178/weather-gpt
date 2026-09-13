@@ -29,7 +29,10 @@ class Settings(BaseSettings):
 
     # --- Weather provider ---
     # --- Weather provider ---
-    # Default is Open-Meteo (free, no key required for non-commercial use):
+    # Default is Open-Meteo (free, no key required for non-commercial use).
+    # Set WEATHER_API_BASE_URL to OpenWeather's 2.5 API and WEATHER_API_KEY
+    # to use OpenWeather for current conditions and the 5-day forecast:
+    #   https://api.openweathermap.org/data/2.5
     #   Weather Forecast API  → https://api.open-meteo.com/v1/forecast
     #   Air Quality API       → https://air-quality-api.open-meteo.com/v1/air-quality
     #   Geocoding API         → https://geocoding-api.open-meteo.com/v1/search

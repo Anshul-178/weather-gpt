@@ -34,6 +34,118 @@ async def test_current_normalization(monkeypatch, provider_current_payload):
 
 
 @pytest.mark.asyncio
+async def test_openweathermap_current_normalization(monkeypatch):
+    """OpenWeather current data is normalized into the existing API schema."""
+    payload = {
+        "coord": {"lon": 80.3319, "lat": 26.4499},
+        "weather": [{"id": 800, "main": "Clear", "description": "clear sky"}],
+        "main": {
+            "temp": 32.4,
+            "feels_like": 36.1,
+            "pressure": 1005,
+            "humidity": 71,
+        },
+        "visibility": 12000,
+        "wind": {"speed": 3.472222, "deg": 180},
+        "clouds": {"all": 5},
+        "sys": {"country": "IN", "sunrise": 1, "sunset": 9999999999},
+        "dt": 1700000000,
+        "name": "Kanpur",
+    }
+
+    monkeypatch.setattr(
+        weather_module.settings,
+        "weather_api_base_url",
+        "https://api.openweathermap.org/data/2.5",
+    )
+
+    async def fake_request(self, url, params):
+        assert url.endswith("/weather")
+        assert params["units"] == "metric"
+        return payload
+
+    monkeypatch.setattr(weather_module.WeatherService, "_request", fake_request)
+    result = await WeatherService().get_current(26.4499, 80.3319)
+
+    assert result.location.name == "Kanpur"
+    assert result.current.temperature == 32.4
+    assert result.current.wind_speed == pytest.approx(12.5, abs=0.01)
+    assert result.current.visibility == 12.0
+    assert result.current.condition == "clear sky"
+
+
+@pytest.mark.asyncio
+async def test_openweathermap_forecast_normalization(monkeypatch):
+    """OpenWeather 3-hour points are grouped into daily forecast points."""
+    payload = {
+        "city": {
+            "name": "Kanpur",
+            "coord": {"lon": 80.3319, "lat": 26.4499},
+            "country": "IN",
+        },
+        "list": [
+            {
+                "dt_txt": "2026-09-14 09:00:00",
+                "main": {"temp": 30.0, "feels_like": 31.0, "humidity": 60},
+                "weather": [{"id": 800, "main": "Clear", "description": "clear sky"}],
+                "wind": {"speed": 2.0},
+                "pop": 0.1,
+                "visibility": 10000,
+            },
+            {
+                "dt_txt": "2026-09-14 12:00:00",
+                "main": {"temp": 34.0, "feels_like": 36.0, "humidity": 55},
+                "weather": [{"id": 801, "main": "Clouds", "description": "few clouds"}],
+                "wind": {"speed": 3.0},
+                "pop": 0.4,
+                "rain": {"3h": 1.2},
+                "visibility": 9000,
+            },
+            {
+                "dt_txt": "2026-09-15 12:00:00",
+                "main": {"temp": 33.0, "feels_like": 35.0, "humidity": 65},
+                "weather": [{"id": 500, "main": "Rain", "description": "light rain"}],
+                "wind": {"speed": 4.0},
+                "pop": 0.7,
+                "visibility": 8000,
+            },
+        ],
+    }
+
+    monkeypatch.setattr(
+        weather_module.settings,
+        "weather_api_base_url",
+        "https://api.openweathermap.org/data/2.5",
+    )
+
+    async def fake_request(self, url, params):
+        assert url.endswith("/forecast")
+        return payload
+
+    monkeypatch.setattr(weather_module.WeatherService, "_request", fake_request)
+    result = await WeatherService().get_forecast(26.4499, 80.3319, days=2)
+
+    assert len(result.forecast) == 2
+    assert result.forecast[0].temperature_max == 34.0
+    assert result.forecast[0].precipitation_probability == 40.0
+    assert len(result.hourly) == 3
+
+
+@pytest.mark.asyncio
+async def test_openweathermap_requires_api_key(monkeypatch):
+    """OpenWeather configuration fails clearly when no key is configured."""
+    monkeypatch.setattr(
+        weather_module.settings,
+        "weather_api_base_url",
+        "https://api.openweathermap.org/data/2.5",
+    )
+    monkeypatch.setattr(weather_module.settings, "weather_api_key", None)
+
+    with pytest.raises(WeatherProviderError, match="WEATHER_API_KEY"):
+        await WeatherService().get_current(26.4499, 80.3319)
+
+
+@pytest.mark.asyncio
 async def test_current_endpoint_success(client, monkeypatch, provider_current_payload):
     """GET /weather/current returns normalized data."""
     _mock_provider(monkeypatch, provider_current_payload, {})

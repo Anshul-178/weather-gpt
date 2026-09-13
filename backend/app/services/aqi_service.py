@@ -142,7 +142,11 @@ class AQIService:
         the caller (get_current_aqi) falls back to cache / last-good payload.
         """
         # Provider API key (moves quota from the shared deployment IP to the account).
-        if settings.weather_api_key and "open-meteo.com" in url:
+        if (
+            settings.weather_api_key
+            and "open-meteo.com" in url
+            and "api.open-meteo.com" in settings.weather_api_base_url
+        ):
             params = {**params, "apikey": settings.weather_api_key}
         max_attempts = 2
         async with httpx.AsyncClient(timeout=settings.weather_timeout_seconds) as client:
