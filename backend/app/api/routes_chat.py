@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai.intents import detect_intent, is_follow_up
+from app.ai.intents import detect_activity, detect_intent, is_follow_up
 from app.config import settings
 from app.database.database import get_db
 from app.models.chat import Conversation, Message
@@ -20,6 +20,7 @@ from app.schemas.chat import ChatRequest, ChatResponse, TtsRequest
 from app.services.ai_service import FALLBACK_NO_DATA, ai_service
 from app.services.auth_service import get_current_user_optional
 from app.services.aqi_service import aqi_service, AQIServiceError
+from app.services.activity_engine import compute_activity_score
 from app.services.cached_weather_service import cached_weather_service
 from app.services.edge_tts_service import edge_tts_service
 from app.services.location_service import location_service
@@ -87,12 +88,20 @@ async def chat(
     follow_up = is_follow_up(body.message) and bool(history)
     _ = follow_up  # resolved implicitly through bounded history passed to LLM
 
+    activity_result = None
+    if intent.value == "ACTIVITY_RECOMMENDATION":
+        activity = detect_activity(body.message)
+        if activity:
+            score = compute_activity_score(activity, current, forecast)
+            activity_result = score.model_dump()
+
     result = await ai_service.answer_question(
         question=body.message,
         current=current,
         forecast=forecast,
         location_name=place,
         conversation_history=history,
+        activity_result=activity_result,
         rag_enabled=settings.rag_enabled,
         aqi=aqi,
     )

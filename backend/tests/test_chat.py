@@ -3,6 +3,7 @@
 import pytest
 
 from app.ai.intents import detect_intent, detect_period, is_follow_up
+from app.ai.intents import detect_activity
 from app.ai.prompts import build_weather_context
 from app.schemas.weather import (
     CurrentWeather,
@@ -100,6 +101,11 @@ def test_period_detection():
 def test_follow_up_detection():
     assert is_follow_up("What about the evening?") is True
     assert is_follow_up("Give me a full seven day detailed forecast please") is False
+
+
+def test_activity_detection():
+    assert detect_activity("Is tomorrow good for cycling?") == "cycling"
+    assert detect_activity("What should I wear today?") == "walking"
 
 
 # ------------------------------------------------------------------ #
@@ -254,4 +260,3 @@ def test_ai_extract_text_multiple_blocks():
         {"type": "text", "text": "Part 2."},
     ]
     assert AIService._extract_text(blocks) == "Part 1. Part 2."
-

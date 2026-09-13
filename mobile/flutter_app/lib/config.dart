@@ -49,13 +49,14 @@ class AppConfig {
     if (_configuredUrl.isNotEmpty) {
       return _configuredUrl;
     }
-    // Web and desktop run on the same machine as the backend, so localhost
-    // works directly.
-    if (kIsWeb || Platform.isWindows || Platform.isMacOS || Platform.isLinux) {
-      return 'http://localhost:8000';
+    // Use the deployed backend by default on every platform.
+    if (kIsWeb ||
+        Platform.isWindows ||
+        Platform.isMacOS ||
+        Platform.isLinux) {
+      return 'https://weather-gpt-backend-x15k.onrender.com';
     }
-    // Android emulator reaches the host machine via 10.0.2.2.
-    return 'http://10.0.2.2:8000';
+    return 'https://weather-gpt-backend-x15k.onrender.com';
   }
 
   static const Duration requestTimeout = Duration(seconds: 15);

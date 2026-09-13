@@ -78,3 +78,20 @@ def is_follow_up(message: str) -> bool:
             text,
         )
     ) or bool(re.search(r"\b(evening|morning|afternoon|night|there|then|that)\b", text))
+
+
+def detect_activity(message: str) -> Optional[str]:
+    """Extract the activity named in a recommendation question."""
+    text = message.lower()
+    activities = (
+        "cycling", "running", "hiking", "cricket", "football", "picnic",
+        "photography", "driving", "walking", "travel", "commute", "outdoor",
+    )
+    for activity in activities:
+        if re.search(rf"\b{re.escape(activity)}\b", text):
+            return activity
+    if re.search(r"\b(what should i wear|what to wear|jacket|clothes)\b", text):
+        return "walking"
+    if re.search(r"\b(carry|take) an? umbrella\b", text):
+        return "walking"
+    return None

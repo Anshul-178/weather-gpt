@@ -2,7 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:geocoding/geocoding.dart';
+import 'package:geocoding/geocoding.dart' as geocoding;
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -88,7 +88,7 @@ class AppState extends ChangeNotifier {
 
       var placeName = 'Current location';
       try {
-        final placemarks = await placemarkFromCoordinates(
+        final placemarks = await geocoding.Geocoding().placemarkFromCoordinates(
           position.latitude, position.longitude);
         if (placemarks.isNotEmpty) {
           final place = placemarks.first;
