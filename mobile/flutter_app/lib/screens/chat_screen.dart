@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/chat.dart';
-import '../providers/app_state.dart';
 import '../providers/chat_state.dart';
 import '../services/voice_service.dart';
 
@@ -20,7 +19,7 @@ class _ChatScreenState extends State<ChatScreen> {
   final VoiceService _voiceService = VoiceService.instance;
 
   bool _isListening = false;
-  String _selectedLocale = 'auto';
+  String _selectedLocale = 'en_IN';
 
   // 9 Indian languages: code + display name + native greeting hint.
   static const List<(String, String)> _locales = [
@@ -98,7 +97,9 @@ class _ChatScreenState extends State<ChatScreen> {
         },
         onFinalResult: (finalWords) {
           // Auto-send when speech recognition detects the user stopped speaking
-          if (mounted && finalWords.trim().isNotEmpty && !_isSendingFromSpeech) {
+          if (mounted &&
+              finalWords.trim().isNotEmpty &&
+              !_isSendingFromSpeech) {
             _isSendingFromSpeech = true;
             _send(chat);
           }
@@ -108,7 +109,8 @@ class _ChatScreenState extends State<ChatScreen> {
       if (!success && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Microphone permission or speech recognition unavailable.'),
+            content: Text(
+                'Microphone permission or speech recognition unavailable.'),
           ),
         );
       }
@@ -137,29 +139,32 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
         actions: [
           // Language selector — 9 Indian languages.
-          if (false) PopupMenuButton<String>(
+          PopupMenuButton<String>(
             tooltip: 'Voice Language',
-            icon: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.language_rounded, size: 20, color: scheme.primary),
-                const SizedBox(width: 4),
-                Text(
-                  _locales
-                      .firstWhere((l) => l.$1 == _selectedLocale,
-                          orElse: () => _locales.first)
-                      .$2
-                      .split('·')
-                      .first
-                      .trim(),
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: scheme.primary,
+            /*
+              icon: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.language_rounded, size: 20, color: scheme.primary),
+                  const SizedBox(width: 4),
+                  Text(
+                    _locales
+                        .firstWhere((l) => l.$1 == _selectedLocale,
+                            orElse: () => _locales.first)
+                        .$2
+                        .split('·')
+                        .first
+                        .trim(),
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: scheme.primary,
+                    ),
                   ),
-                ),
-              ],
-            ),
+                ],
+              ),
+              */
+            icon: const Icon(Icons.language_rounded),
             initialValue: _selectedLocale,
             onSelected: (val) {
               setState(() => _selectedLocale = val);
@@ -177,7 +182,9 @@ class _ChatScreenState extends State<ChatScreen> {
           IconButton(
             tooltip: chat.autoSpeak ? 'Mute AI Voice' : 'Enable AI Voice',
             icon: Icon(
-              chat.autoSpeak ? Icons.volume_up_rounded : Icons.volume_off_rounded,
+              chat.autoSpeak
+                  ? Icons.volume_up_rounded
+                  : Icons.volume_off_rounded,
               color: chat.autoSpeak ? scheme.primary : scheme.onSurfaceVariant,
             ),
             onPressed: () {
@@ -216,7 +223,7 @@ class _ChatScreenState extends State<ChatScreen> {
           Expanded(
             child: ListView.builder(
               controller: _scrollController,
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
               itemCount: chat.messages.length + (chat.sending ? 1 : 0),
               itemBuilder: (context, index) {
                 if (index == chat.messages.length) {
@@ -250,23 +257,14 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
           if (chat.messages.length <= 1)
             SizedBox(
-              height: 52,
+              height: 58,
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
                 padding: const EdgeInsets.symmetric(horizontal: 16),
-                itemCount: ChatState.suggestedQuestions.length +
-                    (context.read<AppState>().aqi != null ? 1 : 0),
+                itemCount: ChatState.suggestedQuestions.length,
                 separatorBuilder: (_, __) => const SizedBox(width: 8),
                 itemBuilder: (context, index) {
-                  final aqi = context.read<AppState>().aqi;
                   const questions = ChatState.suggestedQuestions;
-                  if (aqi != null && index == questions.length) {
-                    return ActionChip(
-                      avatar: const Icon(Icons.air_outlined, size: 18),
-                      label: const Text('How is the air quality?'),
-                      onPressed: () => chat.send('How is the air quality right now?'),
-                    );
-                  }
                   return ActionChip(
                     label: Text(questions[index]),
                     onPressed: () => chat.send(questions[index]),
@@ -280,7 +278,7 @@ class _ChatScreenState extends State<ChatScreen> {
             right: false,
             bottom: true,
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
               decoration: BoxDecoration(
                 color: scheme.surface,
                 border: Border(
@@ -304,7 +302,8 @@ class _ChatScreenState extends State<ChatScreen> {
                       shape: BoxShape.circle,
                     ),
                     child: IconButton(
-                      tooltip: _isListening ? 'Stop Recording' : 'Speak via Mic',
+                      tooltip:
+                          _isListening ? 'Stop Recording' : 'Speak via Mic',
                       icon: Icon(
                         _isListening ? Icons.mic : Icons.mic_none_rounded,
                         color: _isListening ? Colors.white : scheme.primary,
@@ -320,6 +319,19 @@ class _ChatScreenState extends State<ChatScreen> {
                       textInputAction: TextInputAction.send,
                       decoration: InputDecoration(
                         isDense: true,
+                        filled: true,
+                        fillColor: scheme.surfaceContainerHighest.withValues(
+                          alpha: 0.65,
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(18),
+                          borderSide: BorderSide.none,
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(18),
+                          borderSide:
+                              BorderSide(color: scheme.primary, width: 1.4),
+                        ),
                         contentPadding: const EdgeInsets.symmetric(
                             horizontal: 16, vertical: 10),
                         hintText: _isListening
@@ -351,8 +363,7 @@ class _ChatScreenState extends State<ChatScreen> {
                             )
                           : const Icon(Icons.arrow_upward_rounded,
                               color: Colors.white),
-                      onPressed:
-                          chat.sending ? null : () => _send(chat),
+                      onPressed: chat.sending ? null : () => _send(chat),
                     ),
                   ),
                 ],
@@ -397,7 +408,9 @@ class _MessageBubble extends StatelessWidget {
         margin: const EdgeInsets.symmetric(vertical: 5),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
         constraints: BoxConstraints(
-          maxWidth: MediaQuery.of(context).size.width * 0.82,
+          maxWidth: MediaQuery.of(context).size.width > 680
+              ? 560
+              : MediaQuery.of(context).size.width * 0.82,
         ),
         decoration: BoxDecoration(
           color: bg,
@@ -407,6 +420,11 @@ class _MessageBubble extends StatelessWidget {
             bottomLeft: Radius.circular(isUser ? 18 : 4),
             bottomRight: Radius.circular(isUser ? 4 : 18),
           ),
+          border: isUser
+              ? null
+              : Border.all(
+                  color: scheme.outlineVariant.withValues(alpha: 0.35),
+                ),
         ),
         child: Column(
           crossAxisAlignment:

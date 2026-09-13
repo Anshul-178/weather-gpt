@@ -51,18 +51,41 @@ class WeatherGPTApp extends StatelessWidget {
     final base = ThemeData(
       colorScheme: scheme,
       useMaterial3: true,
+      visualDensity: VisualDensity.standard,
+    );
+    final textTheme = base.textTheme.apply(
+      bodyColor: scheme.onSurface,
+      displayColor: scheme.onSurface,
     );
     return base.copyWith(
+      textTheme: textTheme.copyWith(
+        headlineSmall: textTheme.headlineSmall?.copyWith(
+          fontWeight: FontWeight.w800,
+          letterSpacing: -0.6,
+        ),
+        titleLarge: textTheme.titleLarge?.copyWith(
+          fontWeight: FontWeight.w700,
+          letterSpacing: -0.25,
+        ),
+        titleMedium: textTheme.titleMedium?.copyWith(
+          fontWeight: FontWeight.w700,
+          letterSpacing: -0.1,
+        ),
+      ),
       scaffoldBackgroundColor: brightness == Brightness.dark
-          ? const Color(0xFF101522)
-          : const Color(0xFFF8F9FC),
+          ? const Color(0xFF0F1420)
+          : const Color(0xFFF6F8FC),
       appBarTheme: AppBarTheme(
-        backgroundColor: Colors.transparent,
+        backgroundColor: brightness == Brightness.dark
+            ? const Color(0xFF0F1420)
+            : const Color(0xFFF6F8FC),
         foregroundColor: scheme.onSurface,
         elevation: 0,
         scrolledUnderElevation: 0,
+        surfaceTintColor: Colors.transparent,
+        toolbarHeight: 72,
         centerTitle: false,
-        titleTextStyle: base.textTheme.titleLarge?.copyWith(
+        titleTextStyle: textTheme.titleLarge?.copyWith(
           fontWeight: FontWeight.w700,
           letterSpacing: -0.2,
         ),
@@ -83,8 +106,8 @@ class WeatherGPTApp extends StatelessWidget {
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-          textStyle: base.textTheme.titleMedium
-              ?.copyWith(fontWeight: FontWeight.w600),
+          textStyle:
+              base.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
@@ -96,7 +119,9 @@ class WeatherGPTApp extends StatelessWidget {
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: scheme.surfaceContainerHigh.withValues(alpha: 0.5),
+        fillColor: brightness == Brightness.dark
+            ? scheme.surfaceContainerHigh.withValues(alpha: 0.72)
+            : scheme.surfaceContainerHigh.withValues(alpha: 0.68),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
           borderSide: BorderSide.none,
@@ -108,12 +133,28 @@ class WeatherGPTApp extends StatelessWidget {
         contentPadding:
             const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       ),
+      chipTheme: base.chipTheme.copyWith(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.5)),
+        ),
+      ),
       navigationBarTheme: NavigationBarThemeData(
         height: 72,
         elevation: 0,
-        backgroundColor: scheme.surfaceContainer,
+        backgroundColor: brightness == Brightness.dark
+            ? scheme.surfaceContainer
+            : scheme.surface,
         indicatorColor: scheme.primaryContainer,
         labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+        labelTextStyle: WidgetStateProperty.resolveWith(
+          (states) => base.textTheme.labelMedium?.copyWith(
+            fontWeight: states.contains(WidgetState.selected)
+                ? FontWeight.w700
+                : FontWeight.w500,
+          ),
+        ),
         iconTheme: WidgetStateProperty.resolveWith(
           (states) => IconThemeData(
             color: states.contains(WidgetState.selected)
@@ -162,32 +203,66 @@ class _ShellState extends State<_Shell> {
 
   @override
   Widget build(BuildContext context) {
+    final app = context.watch<AppState>();
     return Scaffold(
       appBar: AppBar(
-        title: const Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        title: Row(
           children: [
-            Text('WeatherGPT'),
-            Text('Your weather, made simple',
-                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w500)),
+            Container(
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.primaryContainer,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(
+                Icons.cloud_rounded,
+                color: Theme.of(context).colorScheme.onPrimaryContainer,
+                size: 22,
+              ),
+            ),
+            const SizedBox(width: 10),
+            const Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('WeatherGPT'),
+                Text('Your weather, made simple',
+                    style:
+                        TextStyle(fontSize: 11, fontWeight: FontWeight.w500)),
+              ],
+            ),
           ],
         ),
         actions: [
           IconButton(
             tooltip: 'Refresh',
-            icon: const Icon(Icons.refresh_rounded),
-            onPressed: () => context.read<AppState>().refreshWeather(),
+            icon: app.loading
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.refresh),
+            onPressed: app.loading ? null : app.refreshWeather,
           ),
           const SizedBox(width: 4),
         ],
       ),
-      body: IndexedStack(index: _index, children: _screens),
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 960),
+          child: SizedBox(
+            width: double.infinity,
+            child: IndexedStack(index: _index, children: _screens),
+          ),
+        ),
+      ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => Navigator.of(context).push(
           MaterialPageRoute(builder: (_) => const ChatScreen()),
         ),
         icon: const Icon(Icons.auto_awesome_outlined),
-        label: const Text('Ask AI'),
+        label: const Text('AI Chat'),
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,

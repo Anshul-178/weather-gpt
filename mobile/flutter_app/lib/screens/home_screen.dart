@@ -25,10 +25,10 @@ class _HomeScreenState extends State<HomeScreen> {
     return RefreshIndicator(
       onRefresh: () => state.refreshWeather(),
       child: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 4, 16, 96),
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 112),
         children: [
           _HomeIntro(location: state.location?.name),
-          const SizedBox(height: 14),
+          const SizedBox(height: 18),
           if (state.location == null)
             const _EmptyCard(
               icon: Icons.location_on_outlined,
@@ -48,22 +48,31 @@ class _HomeScreenState extends State<HomeScreen> {
                 color: Theme.of(context).colorScheme.errorContainer,
               ),
             if (current != null) ...[
-              const SizedBox(height: 20),
-              const _SectionHeader(title: 'Conditions now'),
+              const SizedBox(height: 24),
+              const _SectionHeader(
+                title: 'Conditions now',
+                subtitle: 'Everything you need at a glance',
+              ),
               const SizedBox(height: 10),
               _MetricGrid(current: current),
             ],
             // AQI Section
             if (state.aqi != null) ...[
               const SizedBox(height: 24),
-              const _SectionHeader(title: 'Air Quality'),
+              const _SectionHeader(
+                title: 'Air quality',
+                subtitle: 'Breathe easy with a quick AQI check',
+              ),
               const SizedBox(height: 10),
               _AQICard(aqi: state.aqi!, isDark: isDark),
             ],
             if (state.hourly.isNotEmpty) ...[
-            const SizedBox(height: 24),
-            const _SectionHeader(title: 'Next hours'),
-            const SizedBox(height: 10),
+              const SizedBox(height: 24),
+              const _SectionHeader(
+                title: 'Next hours',
+                subtitle: 'Rain chances and temperature ahead',
+              ),
+              const SizedBox(height: 10),
               SizedBox(
                 height: 124,
                 child: ListView.separated(
@@ -76,9 +85,12 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ],
             if (state.daily.isNotEmpty) ...[
-            const SizedBox(height: 24),
-            const _SectionHeader(title: '7-day forecast'),
-            const SizedBox(height: 10),
+              const SizedBox(height: 24),
+              const _SectionHeader(
+                title: '7-day forecast',
+                subtitle: 'Plan the week with confidence',
+              ),
+              const SizedBox(height: 10),
               Card(
                 child: Padding(
                   padding: const EdgeInsets.symmetric(vertical: 4),
@@ -107,9 +119,11 @@ class _HomeIntro extends StatelessWidget {
     final now = DateTime.now();
     final greeting = now.hour < 12
         ? 'Good morning'
-        : now.hour < 18 ? 'Good afternoon' : 'Good evening';
+        : now.hour < 18
+            ? 'Good afternoon'
+            : 'Good evening';
     return Row(
-      crossAxisAlignment: CrossAxisAlignment.end,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         Expanded(
           child: Column(
@@ -147,9 +161,8 @@ class _HomeIntro extends StatelessWidget {
                 const SizedBox(width: 5),
                 Text('Live',
                     style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .onPrimaryContainer,
+                          color:
+                              Theme.of(context).colorScheme.onPrimaryContainer,
                           fontWeight: FontWeight.w700,
                         )),
               ],
@@ -192,7 +205,7 @@ class _HeroCard extends StatelessWidget {
         ],
       ),
       child: Padding(
-        padding: const EdgeInsets.all(22),
+        padding: const EdgeInsets.fromLTRB(22, 20, 22, 18),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -236,14 +249,11 @@ class _HeroCard extends StatelessWidget {
               children: [
                 Text(
                   '${current?.temperature?.round() ?? '--'}°',
-                  style: Theme.of(context)
-                      .textTheme
-                      .displayLarge
-                      ?.copyWith(
-                          color: Colors.white,
-                          fontSize: 88,
-                          fontWeight: FontWeight.w200,
-                          height: 1.0),
+                  style: Theme.of(context).textTheme.displayLarge?.copyWith(
+                      color: Colors.white,
+                      fontSize: 88,
+                      fontWeight: FontWeight.w200,
+                      height: 1.0),
                 ),
                 const Spacer(),
                 Padding(
@@ -259,8 +269,11 @@ class _HeroCard extends StatelessWidget {
                       const SizedBox(height: 6),
                       Text(
                         current?.condition ?? '—',
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            color: Colors.white.withValues(alpha: 0.85)),
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleMedium
+                            ?.copyWith(
+                                color: Colors.white.withValues(alpha: 0.85)),
                       ),
                     ],
                   ),
@@ -275,9 +288,105 @@ class _HeroCard extends StatelessWidget {
                   .bodyMedium
                   ?.copyWith(color: Colors.white.withValues(alpha: 0.75)),
             ),
+            const SizedBox(height: 18),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.13),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: _HeroStat(
+                      icon: Icons.water_drop_outlined,
+                      label: 'Rain chance',
+                      value:
+                          '${current?.precipitationProbability?.round() ?? 0}%',
+                    ),
+                  ),
+                  Container(
+                    width: 1,
+                    height: 28,
+                    color: Colors.white.withValues(alpha: 0.2),
+                  ),
+                  Expanded(
+                    child: _HeroStat(
+                      icon: Icons.air_rounded,
+                      label: 'Wind',
+                      value: '${current?.windSpeed?.round() ?? '--'} km/h',
+                    ),
+                  ),
+                  if (state.daily.isNotEmpty) ...[
+                    Container(
+                      width: 1,
+                      height: 28,
+                      color: Colors.white.withValues(alpha: 0.2),
+                    ),
+                    Expanded(
+                      child: _HeroStat(
+                        icon: Icons.thermostat_outlined,
+                        label: 'Today',
+                        value:
+                            '${state.daily.first.temperatureMax?.round() ?? '--'}° / '
+                            '${state.daily.first.temperatureMin?.round() ?? '--'}°',
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
           ],
         ),
       ),
+    );
+  }
+}
+
+class _HeroStat extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+
+  const _HeroStat({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(icon, size: 16, color: Colors.white.withValues(alpha: 0.78)),
+        const SizedBox(width: 6),
+        Flexible(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                value,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12,
+                ),
+              ),
+              Text(
+                label,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.72),
+                  fontSize: 10,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
@@ -286,16 +395,31 @@ class _HeroCard extends StatelessWidget {
 
 class _SectionHeader extends StatelessWidget {
   final String title;
-  const _SectionHeader({required this.title});
+  final String? subtitle;
+  const _SectionHeader({required this.title, this.subtitle});
 
   @override
   Widget build(BuildContext context) {
-    return Text(
-      title,
-      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-            fontWeight: FontWeight.w700,
-            letterSpacing: -0.1,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w700,
+                letterSpacing: -0.1,
+              ),
+        ),
+        if (subtitle != null) ...[
+          const SizedBox(height: 2),
+          Text(
+            subtitle!,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
           ),
+        ],
+      ],
     );
   }
 }
@@ -307,15 +431,26 @@ class _MetricGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final metrics = [
-      ('Humidity', '${current.humidity?.round() ?? '--'}%',
-          Icons.water_drop_rounded),
-      ('Wind', '${current.windSpeed?.toStringAsFixed(0) ?? '--'} km/h',
-          Icons.air_rounded),
-      ('UV index', current.uvIndex?.toStringAsFixed(0) ?? '--',
-          Icons.wb_sunny_outlined),
-      ('Visibility',
-          '${current.visibility?.toStringAsFixed(0) ?? '--'} km',
-          Icons.visibility_outlined),
+      (
+        'Humidity',
+        '${current.humidity?.round() ?? '--'}%',
+        Icons.water_drop_rounded
+      ),
+      (
+        'Wind',
+        '${current.windSpeed?.toStringAsFixed(0) ?? '--'} km/h',
+        Icons.air_rounded
+      ),
+      (
+        'UV index',
+        current.uvIndex?.toStringAsFixed(0) ?? '--',
+        Icons.wb_sunny_outlined
+      ),
+      (
+        'Visibility',
+        '${current.visibility?.toStringAsFixed(0) ?? '--'} km',
+        Icons.visibility_outlined
+      ),
     ];
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -349,6 +484,12 @@ class _MetricTile extends StatelessWidget {
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surfaceContainerLow,
         borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: Theme.of(context)
+              .colorScheme
+              .outlineVariant
+              .withValues(alpha: 0.28),
+        ),
       ),
       child: LayoutBuilder(builder: (context, constraints) {
         final isWide = constraints.maxWidth > 130;
@@ -366,8 +507,10 @@ class _MetricTile extends StatelessWidget {
                   color: Theme.of(context).colorScheme.onSurfaceVariant)),
         ];
         return isWide
-            ? Row(mainAxisAlignment: MainAxisAlignment.center, children: content)
-            : Column(mainAxisAlignment: MainAxisAlignment.center, children: content);
+            ? Row(
+                mainAxisAlignment: MainAxisAlignment.center, children: content)
+            : Column(
+                mainAxisAlignment: MainAxisAlignment.center, children: content);
       }),
     );
   }
@@ -379,7 +522,8 @@ class _HourCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isNow = hour.time.difference(DateTime.now()).inHours == 0;
+    final minutesFromNow = hour.time.difference(DateTime.now()).inMinutes;
+    final isNow = minutesFromNow >= -30 && minutesFromNow <= 30;
     return Container(
       width: 84,
       padding: const EdgeInsets.symmetric(vertical: 10),
@@ -393,7 +537,7 @@ class _HourCard extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Text(
-            DateFormat('HH:mm').format(hour.time),
+            isNow ? 'Now' : DateFormat('HH:mm').format(hour.time),
             style: Theme.of(context).textTheme.labelMedium?.copyWith(
                 color: Theme.of(context).colorScheme.onSurfaceVariant),
           ),
@@ -408,11 +552,8 @@ class _HourCard extends StatelessWidget {
                   ?.copyWith(fontWeight: FontWeight.w700)),
           const SizedBox(height: 2),
           Text('${hour.precipitationProbability?.round() ?? 0}%',
-              style: Theme.of(context)
-                  .textTheme
-                  .labelSmall
-                  ?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant)),
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant)),
         ],
       ),
     );
@@ -458,9 +599,8 @@ class _DayRow extends StatelessWidget {
                   child: LinearProgressIndicator(
                     value: (day.precipitationProbability ?? 0) / 100,
                     minHeight: 4,
-                    backgroundColor: Theme.of(context)
-                        .colorScheme
-                        .surfaceContainerHighest,
+                    backgroundColor:
+                        Theme.of(context).colorScheme.surfaceContainerHighest,
                   ),
                 ),
               ],
@@ -584,6 +724,17 @@ class _AQICard extends StatelessWidget {
                   ),
             ),
             const SizedBox(height: 16),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(99),
+              child: LinearProgressIndicator(
+                value: ((aqi.aqi ?? 0) / 300).clamp(0.0, 1.0),
+                minHeight: 6,
+                color: color,
+                backgroundColor:
+                    Theme.of(context).colorScheme.surfaceContainerHighest,
+              ),
+            ),
+            const SizedBox(height: 14),
             Row(
               children: [
                 _AQIMetric(

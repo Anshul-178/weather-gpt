@@ -83,8 +83,8 @@ class _LocationsScreenState extends State<LocationsScreen> {
     final app = context.read<AppState>();
     if (app.location == null) return;
     if (!app.isAuthenticated) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Log in to save locations.')));
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Log in to save locations.')));
       return;
     }
     try {
@@ -95,8 +95,8 @@ class _LocationsScreenState extends State<LocationsScreen> {
       );
       await _loadSaved();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Location saved.')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Location saved.')));
     } on ApiException catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
@@ -133,8 +133,20 @@ class _LocationsScreenState extends State<LocationsScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('Locations')),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
         children: [
+          Text(
+            'Set your forecast location',
+            style: Theme.of(context).textTheme.headlineSmall,
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Use GPS or search for another city to personalize WeatherGPT.',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+          ),
+          const SizedBox(height: 18),
           // ---- GPS tile ----
           Container(
             decoration: BoxDecoration(
@@ -158,8 +170,7 @@ class _LocationsScreenState extends State<LocationsScreen> {
                       height: 24,
                       child: CircularProgressIndicator(strokeWidth: 2.5))
                   : CircleAvatar(
-                      backgroundColor:
-                          Theme.of(context).colorScheme.primary,
+                      backgroundColor: Theme.of(context).colorScheme.primary,
                       child: const Icon(Icons.my_location_rounded,
                           color: Colors.white, size: 20),
                     ),
@@ -209,7 +220,14 @@ class _LocationsScreenState extends State<LocationsScreen> {
                     },
             ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 24),
+          Text(
+            'Find a place',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+          ),
+          const SizedBox(height: 8),
           // ---- Search ----
           TextField(
             controller: _searchController,
@@ -220,17 +238,29 @@ class _LocationsScreenState extends State<LocationsScreen> {
               suffixIcon: _searching
                   ? const Padding(
                       padding: EdgeInsets.all(12),
-                      child:
-                          SizedBox(width: 20, height: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2)),
+                      child: SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2)),
                     )
                   : _searchController.text.isNotEmpty
-                      ? IconButton(
-                          icon: const Icon(Icons.close_rounded),
-                          onPressed: () {
-                            _searchController.clear();
-                            setState(() => _results = []);
-                          },
+                      ? Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              tooltip: 'Search',
+                              icon: const Icon(Icons.arrow_forward_rounded),
+                              onPressed: _search,
+                            ),
+                            IconButton(
+                              tooltip: 'Clear search',
+                              icon: const Icon(Icons.close_rounded),
+                              onPressed: () {
+                                _searchController.clear();
+                                setState(() => _results = []);
+                              },
+                            ),
+                          ],
                         )
                       : null,
             ),
@@ -249,7 +279,14 @@ class _LocationsScreenState extends State<LocationsScreen> {
                 child: ListTile(
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(20)),
-                  leading: const Icon(Icons.location_city_rounded),
+                  leading: CircleAvatar(
+                    backgroundColor:
+                        Theme.of(context).colorScheme.secondaryContainer,
+                    child: Icon(
+                      Icons.location_city_rounded,
+                      color: Theme.of(context).colorScheme.onSecondaryContainer,
+                    ),
+                  ),
                   title: Text(result.displayName),
                   trailing: app.isAuthenticated
                       ? IconButton(
@@ -265,6 +302,17 @@ class _LocationsScreenState extends State<LocationsScreen> {
                   )),
                 ),
               )),
+          if (_results.isEmpty &&
+              _searchController.text.trim().isNotEmpty &&
+              !_searching &&
+              _error == null)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 18),
+              child: _LocationEmptyState(
+                icon: Icons.search_off_rounded,
+                message: 'No matching places found. Try a nearby city.',
+              ),
+            ),
           if (_saved.isNotEmpty || app.isAuthenticated) ...[
             const SizedBox(height: 16),
             Row(
@@ -288,10 +336,16 @@ class _LocationsScreenState extends State<LocationsScreen> {
                 child: ListTile(
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(20)),
-                  leading: const Icon(Icons.bookmark_rounded),
+                  leading: CircleAvatar(
+                    backgroundColor:
+                        Theme.of(context).colorScheme.tertiaryContainer,
+                    child: Icon(
+                      Icons.bookmark_rounded,
+                      color: Theme.of(context).colorScheme.onTertiaryContainer,
+                    ),
+                  ),
                   title: Text(saved.name),
-                  subtitle: Text(
-                      '${saved.latitude.toStringAsFixed(2)}, '
+                  subtitle: Text('${saved.latitude.toStringAsFixed(2)}, '
                       '${saved.longitude.toStringAsFixed(2)}'),
                   trailing: IconButton(
                     icon: const Icon(Icons.delete_outline_rounded),
@@ -306,6 +360,30 @@ class _LocationsScreenState extends State<LocationsScreen> {
               )),
         ],
       ),
+    );
+  }
+}
+
+class _LocationEmptyState extends StatelessWidget {
+  final IconData icon;
+  final String message;
+
+  const _LocationEmptyState({required this.icon, required this.message});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Icon(icon, size: 30, color: Theme.of(context).colorScheme.primary),
+        const SizedBox(height: 8),
+        Text(
+          message,
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+        ),
+      ],
     );
   }
 }

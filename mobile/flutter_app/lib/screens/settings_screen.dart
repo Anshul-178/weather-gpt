@@ -16,8 +16,16 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   final WeatherRepository _repository = WeatherRepository();
   static const List<String> _activities = [
-    'walking', 'running', 'cycling', 'hiking', 'cricket', 'football',
-    'picnic', 'photography', 'driving', 'college_commute',
+    'walking',
+    'running',
+    'cycling',
+    'hiking',
+    'cricket',
+    'football',
+    'picnic',
+    'photography',
+    'driving',
+    'college_commute',
   ];
   String _selectedActivity = 'walking';
   bool _loadingScore = false;
@@ -100,9 +108,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 96),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 112),
       children: [
-        const _SectionHeader(title: 'Activity weather score'),
+        const _SectionHeader(
+          title: 'Activity weather score',
+          subtitle: 'Find the best time to get outside',
+        ),
         const SizedBox(height: 10),
         Card(
           child: Padding(
@@ -112,8 +123,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
               children: [
                 DropdownButtonFormField<String>(
                   initialValue: _selectedActivity,
-                  decoration: const InputDecoration(
-                      labelText: 'Choose an activity'),
+                  decoration:
+                      const InputDecoration(labelText: 'Choose an activity'),
                   items: _activities
                       .map((a) => DropdownMenuItem(
                           value: a,
@@ -128,8 +139,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 SizedBox(
                   width: double.infinity,
                   child: FilledButton.icon(
-                    onPressed:
-                        app.location == null || _loadingScore ? null : _fetchScore,
+                    onPressed: app.location == null || _loadingScore
+                        ? null
+                        : _fetchScore,
                     icon: _loadingScore
                         ? const SizedBox(
                             width: 18,
@@ -144,8 +156,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   if (_score!['error'] != null)
                     Text(
                       _score!['error'] as String,
-                      style: TextStyle(
-                          color: Theme.of(context).colorScheme.error),
+                      style:
+                          TextStyle(color: Theme.of(context).colorScheme.error),
                     )
                   else
                     _ScoreResult(score: _score!),
@@ -154,8 +166,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ),
         ),
+        if (app.location == null) ...[
+          const SizedBox(height: 10),
+          Text(
+            'Choose a location from the Home screen before checking conditions.',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+          ),
+        ],
         const SizedBox(height: 24),
-        const _SectionHeader(title: 'Alert notifications'),
+        const _SectionHeader(
+          title: 'Alert notifications',
+          subtitle: 'Stay ahead of extreme weather',
+        ),
         const SizedBox(height: 10),
         Card(
           child: Padding(
@@ -196,7 +220,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         ),
         const SizedBox(height: 24),
-        const _SectionHeader(title: 'About'),
+        const _SectionHeader(
+          title: 'About WeatherGPT',
+          subtitle: 'Privacy and app preferences',
+        ),
         const SizedBox(height: 10),
         const Card(
           child: Column(
@@ -206,24 +233,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 title: Text('Temperature unit'),
                 subtitle: Text('Celsius (set by the WeatherGPT backend)'),
               ),
-              Divider(
-                  height: 1,
-                  indent: 56),
+              Divider(height: 1, indent: 56),
               ListTile(
                 leading: Icon(Icons.notifications_outlined),
                 title: Text('Alerts'),
-                subtitle:
-                    Text('Alert preferences are managed per account.'),
+                subtitle: Text('Alert preferences are managed per account.'),
               ),
-              Divider(
-                  height: 1,
-                  indent: 56),
+              Divider(height: 1, indent: 56),
               ListTile(
                 leading: Icon(Icons.privacy_tip_outlined),
                 title: Text('Privacy'),
-                subtitle: Text(
-                    'Locations are sent to the WeatherGPT backend only '
-                    'to retrieve weather data.'),
+                subtitle:
+                    Text('Locations are sent to the WeatherGPT backend only '
+                        'to retrieve weather data.'),
               ),
             ],
           ),
@@ -235,16 +257,31 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
 class _SectionHeader extends StatelessWidget {
   final String title;
-  const _SectionHeader({required this.title});
+  final String? subtitle;
+  const _SectionHeader({required this.title, this.subtitle});
 
   @override
   Widget build(BuildContext context) {
-    return Text(
-      title,
-      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-            fontWeight: FontWeight.w700,
-            letterSpacing: -0.1,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w700,
+                letterSpacing: -0.1,
+              ),
+        ),
+        if (subtitle != null) ...[
+          const SizedBox(height: 2),
+          Text(
+            subtitle!,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
           ),
+        ],
+      ],
     );
   }
 }
@@ -311,7 +348,8 @@ class _ScoreResult extends StatelessWidget {
                     Text(
                       'Best time: ${score['best_time']}',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant),
+                          color:
+                              Theme.of(context).colorScheme.onSurfaceVariant),
                     ),
                 ],
               ),

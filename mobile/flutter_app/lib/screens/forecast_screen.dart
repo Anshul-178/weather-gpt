@@ -35,10 +35,10 @@ class _ForecastScreenState extends State<ForecastScreen> {
     setState(() => _climateLoading = true);
     _repository
         .fetchClimateTrend(
-          state.location!.latitude,
-          state.location!.longitude,
-          years: 5,
-        )
+      state.location!.latitude,
+      state.location!.longitude,
+      years: 5,
+    )
         .then((trend) {
       if (mounted) {
         setState(() {
@@ -49,7 +49,8 @@ class _ForecastScreenState extends State<ForecastScreen> {
     }).catchError((Object e) {
       if (mounted) {
         setState(() {
-          _climateError = e is ApiException ? e.message : 'Climate data unavailable.';
+          _climateError =
+              e is ApiException ? e.message : 'Climate data unavailable.';
           _climateLoading = false;
         });
       }
@@ -67,9 +68,14 @@ class _ForecastScreenState extends State<ForecastScreen> {
     }
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 96),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 112),
       children: [
-        const _SectionHeader(title: 'Next 24 hours'),
+        _ForecastLocationHeader(location: state.location!.name),
+        const SizedBox(height: 22),
+        const _SectionHeader(
+          title: 'Next 24 hours',
+          subtitle: 'A closer look at what is coming up',
+        ),
         const SizedBox(height: 10),
         if (state.hourly.isEmpty)
           const Text('No hourly data available.')
@@ -85,18 +91,28 @@ class _ForecastScreenState extends State<ForecastScreen> {
             ),
           ),
         const SizedBox(height: 24),
-        const _SectionHeader(title: 'Daily forecast'),
+        const _SectionHeader(
+          title: 'Daily forecast',
+          subtitle: 'Seven days of temperature and conditions',
+        ),
         const SizedBox(height: 10),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            child: Column(
-              children: state.daily
-                  .map((day) => _ForecastDayRow(day: day))
-                  .toList(),
+        if (state.daily.isEmpty)
+          const _EmptyForecastCard()
+        else
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Column(
+                children: [
+                  for (var index = 0; index < state.daily.length; index++) ...[
+                    _ForecastDayRow(day: state.daily[index]),
+                    if (index < state.daily.length - 1)
+                      const Divider(height: 1, indent: 16, endIndent: 16),
+                  ],
+                ],
+              ),
             ),
           ),
-        ),
         const SizedBox(height: 24),
         _ClimateSection(
           climate: _climate,
@@ -110,16 +126,93 @@ class _ForecastScreenState extends State<ForecastScreen> {
 
 class _SectionHeader extends StatelessWidget {
   final String title;
-  const _SectionHeader({required this.title});
+  final String? subtitle;
+  const _SectionHeader({required this.title, this.subtitle});
 
   @override
   Widget build(BuildContext context) {
-    return Text(
-      title,
-      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-            fontWeight: FontWeight.w700,
-            letterSpacing: -0.1,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w700,
+                letterSpacing: -0.1,
+              ),
+        ),
+        if (subtitle != null) ...[
+          const SizedBox(height: 2),
+          Text(
+            subtitle!,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
           ),
+        ],
+      ],
+    );
+  }
+}
+
+class _ForecastLocationHeader extends StatelessWidget {
+  final String location;
+  const _ForecastLocationHeader({required this.location});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: scheme.primaryContainer.withValues(alpha: 0.58),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.location_on_rounded, size: 18, color: scheme.primary),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              location,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: scheme.onPrimaryContainer,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          Text(
+            'Live forecast',
+            style: TextStyle(
+              color: scheme.onPrimaryContainer.withValues(alpha: 0.72),
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _EmptyForecastCard extends StatelessWidget {
+  const _EmptyForecastCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(22),
+        child: Row(
+          children: [
+            Icon(Icons.cloud_queue_rounded,
+                color: Theme.of(context).colorScheme.primary),
+            const SizedBox(width: 12),
+            const Expanded(child: Text('Daily forecast is not available yet.')),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -130,18 +223,24 @@ class _ForecastHourCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final minutesFromNow = hour.time.difference(DateTime.now()).inMinutes;
+    final isNow = minutesFromNow >= -30 && minutesFromNow <= 30;
+    final scheme = Theme.of(context).colorScheme;
     return Container(
       width: 88,
       padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerLow,
+        color: isNow ? scheme.primaryContainer : scheme.surfaceContainerLow,
         borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: scheme.outlineVariant.withValues(alpha: isNow ? 0.5 : 0.28),
+        ),
       ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Text(
-            DateFormat('HH:mm').format(hour.time),
+            isNow ? 'Now' : DateFormat('HH:mm').format(hour.time),
             style: Theme.of(context).textTheme.labelMedium?.copyWith(
                 color: Theme.of(context).colorScheme.onSurfaceVariant),
           ),
@@ -155,11 +254,8 @@ class _ForecastHourCard extends StatelessWidget {
                   .titleMedium
                   ?.copyWith(fontWeight: FontWeight.w700)),
           Text('Rain ${hour.precipitationProbability?.round() ?? 0}%',
-              style: Theme.of(context)
-                  .textTheme
-                  .labelSmall
-                  ?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant)),
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant)),
         ],
       ),
     );
@@ -188,9 +284,7 @@ class _ForecastDayRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  date != null
-                      ? DateFormat('EEE').format(date)
-                      : day.date,
+                  date != null ? DateFormat('EEE').format(date) : day.date,
                   style: Theme.of(context)
                       .textTheme
                       .titleSmall
@@ -291,7 +385,8 @@ class _ClimateSection extends StatelessWidget {
     if (anomaly == null) {
       anomalyText = 'Baseline building…';
     } else if (anomaly >= 1) {
-      anomalyText = 'This month is ${anomaly.toStringAsFixed(1)}°C warmer than recent years';
+      anomalyText =
+          'This month is ${anomaly.toStringAsFixed(1)}°C warmer than recent years';
     } else if (anomaly <= -1) {
       anomalyText =
           'This month is ${anomaly.abs().toStringAsFixed(1)}°C cooler than recent years';
@@ -302,7 +397,10 @@ class _ClimateSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const _SectionHeader(title: 'Climate trends (5 years)'),
+        const _SectionHeader(
+          title: 'Climate trends (5 years)',
+          subtitle: 'Longer-term patterns for this location',
+        ),
         const SizedBox(height: 10),
         Card(
           child: Padding(
@@ -357,8 +455,10 @@ class _ClimateSection extends StatelessWidget {
                 const SizedBox(height: 6),
                 Text(
                   'Monthly mean temperature, last ${trend.years} years',
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: scheme.onSurfaceVariant),
+                  style: Theme.of(context)
+                      .textTheme
+                      .labelSmall
+                      ?.copyWith(color: scheme.onSurfaceVariant),
                 ),
               ],
             ),
@@ -392,11 +492,15 @@ class _ClimateStat extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(value,
-                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w700)),
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleSmall
+                      ?.copyWith(fontWeight: FontWeight.w700)),
               Text(label,
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: scheme.onSurfaceVariant)),
+                  style: Theme.of(context)
+                      .textTheme
+                      .labelSmall
+                      ?.copyWith(color: scheme.onSurfaceVariant)),
             ],
           ),
         ),
@@ -413,11 +517,8 @@ class _MonthlyBars extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final points = monthly
-        .where((m) => m.avgTempMean != null)
-        .toList()
-        .take(60)
-        .toList();
+    final points =
+        monthly.where((m) => m.avgTempMean != null).toList().take(60).toList();
     if (points.isEmpty) return const SizedBox.shrink();
     final values = points.map((m) => m.avgTempMean!).toList();
     final minV = values.reduce((a, b) => a < b ? a : b);

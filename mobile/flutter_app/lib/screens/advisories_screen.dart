@@ -107,8 +107,20 @@ class _AdvisoriesScreenState extends State<AdvisoriesScreen> {
     return RefreshIndicator(
       onRefresh: _loadAdvisories,
       child: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 4, 16, 96),
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 112),
         children: [
+          Text(
+            'Decision support',
+            style: Theme.of(context).textTheme.headlineSmall,
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Useful guidance for farming, flying, and city monitoring.',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+          ),
+          const SizedBox(height: 18),
           Row(
             children: [
               Expanded(
@@ -119,8 +131,8 @@ class _AdvisoriesScreenState extends State<AdvisoriesScreen> {
                     labelText: 'Crop (optional)',
                   ),
                   items: _crops
-                      .map((c) => DropdownMenuItem(
-                          value: c.$1, child: Text(c.$2)))
+                      .map((c) =>
+                          DropdownMenuItem(value: c.$1, child: Text(c.$2)))
                       .toList(),
                   onChanged: (value) {
                     setState(() => _selectedCrop = value ?? '');
@@ -140,8 +152,7 @@ class _AdvisoriesScreenState extends State<AdvisoriesScreen> {
             Card(
               child: Padding(
                 padding: const EdgeInsets.all(16),
-                child: Text(_error!,
-                    style: TextStyle(color: scheme.error)),
+                child: Text(_error!, style: TextStyle(color: scheme.error)),
               ),
             )
           else ...[
@@ -151,7 +162,10 @@ class _AdvisoriesScreenState extends State<AdvisoriesScreen> {
             const SizedBox(height: 16),
           ],
           if (_cities != null && _cities!.cities.isNotEmpty) ...[
-            const _SectionHeader(title: 'City weather monitor'),
+            const _SectionHeader(
+              title: 'City weather monitor',
+              subtitle: 'A quick view across monitored locations',
+            ),
             const SizedBox(height: 10),
             Card(
               child: Column(
@@ -169,16 +183,31 @@ class _AdvisoriesScreenState extends State<AdvisoriesScreen> {
 
 class _SectionHeader extends StatelessWidget {
   final String title;
-  const _SectionHeader({required this.title});
+  final String? subtitle;
+  const _SectionHeader({required this.title, this.subtitle});
 
   @override
   Widget build(BuildContext context) {
-    return Text(
-      title,
-      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-            fontWeight: FontWeight.w700,
-            letterSpacing: -0.1,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w700,
+                letterSpacing: -0.1,
+              ),
+        ),
+        if (subtitle != null) ...[
+          const SizedBox(height: 2),
+          Text(
+            subtitle!,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
           ),
+        ],
+      ],
     );
   }
 }
@@ -198,7 +227,8 @@ class _CropCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                Icon(Icons.agriculture_rounded, color: scheme.primary, size: 22),
+                Icon(Icons.agriculture_rounded,
+                    color: scheme.primary, size: 22),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
@@ -235,8 +265,7 @@ class _CropCard extends StatelessWidget {
               ),
             ],
             const SizedBox(height: 12),
-            ...crop.advisories.map(
-                (item) => _AdvisoryRow(item: item)),
+            ...crop.advisories.map((item) => _AdvisoryRow(item: item)),
           ],
         ),
       ),
@@ -264,8 +293,8 @@ class _MiniScoreBadge extends StatelessWidget {
       ),
       child: Text(
         'Field work $score',
-        style: TextStyle(
-            color: color, fontWeight: FontWeight.w700, fontSize: 12),
+        style:
+            TextStyle(color: color, fontWeight: FontWeight.w700, fontSize: 12),
       ),
     );
   }
@@ -476,8 +505,7 @@ class _CityRow extends StatelessWidget {
           ),
           if (city.aqi != null) ...[
             Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
               decoration: BoxDecoration(
                 color: scheme.surfaceContainerHighest,
                 borderRadius: BorderRadius.circular(8),
@@ -493,16 +521,16 @@ class _CityRow extends StatelessWidget {
             width: 110,
             child: Text(
               city.condition ?? '—',
-              style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: scheme.onSurfaceVariant),
+              style: Theme.of(context)
+                  .textTheme
+                  .labelSmall
+                  ?.copyWith(color: scheme.onSurfaceVariant),
               overflow: TextOverflow.ellipsis,
             ),
           ),
           const SizedBox(width: 8),
           Text(
-            city.temperature == null
-                ? '--°'
-                : '${city.temperature!.round()}°',
+            city.temperature == null ? '--°' : '${city.temperature!.round()}°',
             style: Theme.of(context)
                 .textTheme
                 .titleMedium
