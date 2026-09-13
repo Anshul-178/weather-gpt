@@ -24,7 +24,7 @@ class ChatState extends ChangeNotifier {
 
   bool sending = false;
   bool autoSpeak = true;
-  String voiceLanguage = 'en-IN'; // BCP-47: en-IN, hi-IN, ta-IN, te-IN, bn-IN…
+  String voiceLanguage = 'auto'; // Detect response language from each message.
 
   static const List<String> suggestedQuestions = [
     'Will it rain today?',

@@ -20,7 +20,7 @@ class _ChatScreenState extends State<ChatScreen> {
   final VoiceService _voiceService = VoiceService.instance;
 
   bool _isListening = false;
-  String _selectedLocale = 'en_IN';
+  String _selectedLocale = 'auto';
 
   // 9 Indian languages: code + display name + native greeting hint.
   static const List<(String, String)> _locales = [
@@ -82,7 +82,7 @@ class _ChatScreenState extends State<ChatScreen> {
     } else {
       _isSendingFromSpeech = false;
       final success = await _voiceService.startListening(
-        preferredLocaleId: _selectedLocale,
+        preferredLocaleId: null,
         onStatusChanged: (listening) {
           if (mounted) setState(() => _isListening = listening);
         },
@@ -137,7 +137,7 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
         actions: [
           // Language selector — 9 Indian languages.
-          PopupMenuButton<String>(
+          if (false) PopupMenuButton<String>(
             tooltip: 'Voice Language',
             icon: Row(
               mainAxisSize: MainAxisSize.min,

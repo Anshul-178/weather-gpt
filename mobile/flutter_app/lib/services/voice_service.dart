@@ -16,7 +16,8 @@ class VoiceService {
   static final VoiceService instance = VoiceService._();
 
   /// Currently preferred BCP-47 language for TTS (e.g. 'ta-IN').
-  String language = 'en-IN';
+  /// Automatic by default. A manual value can still be assigned as an override.
+  String language = 'auto';
 
   final stt.SpeechToText _speech = stt.SpeechToText();
   final AudioPlayer _audioPlayer = AudioPlayer();
@@ -45,11 +46,22 @@ class VoiceService {
     return hindiRegex.hasMatch(text);
   }
 
-  /// Select the TTS language: explicit override, current preference, or
-  /// script auto-detection (backend handles detection when none is passed).
+  /// Select TTS language from the user's text unless a manual override exists.
   String _resolveLanguage(String text, String? languageOverride) {
-    if (languageOverride != null) return languageOverride;
-    return language;
+    if (languageOverride != null && languageOverride != 'auto') {
+      return languageOverride;
+    }
+    if (language != 'auto') return language;
+    if (RegExp(r'[\u0900-\u097F]').hasMatch(text)) return 'hi-IN';
+    if (RegExp(r'[\u0980-\u09FF]').hasMatch(text)) return 'bn-IN';
+    if (RegExp(r'[\u0B80-\u0BFF]').hasMatch(text)) return 'ta-IN';
+    if (RegExp(r'[\u0C00-\u0C7F]').hasMatch(text)) return 'te-IN';
+    if (RegExp(r'[\u0C80-\u0CFF]').hasMatch(text)) return 'kn-IN';
+    if (RegExp(r'[\u0D00-\u0D7F]').hasMatch(text)) return 'ml-IN';
+    if (RegExp(r'[\u0A00-\u0A7F]').hasMatch(text)) return 'pa-IN';
+    if (RegExp(r'[\u0A80-\u0AFF]').hasMatch(text)) return 'gu-IN';
+    if (RegExp(r'[\u0900-\u097F]').hasMatch(text)) return 'mr-IN';
+    return 'en-IN';
   }
 
   /// Synthesize and speak using Microsoft Edge Neural TTS via backend API.
