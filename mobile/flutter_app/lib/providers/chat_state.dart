@@ -11,7 +11,19 @@ class ChatState extends ChangeNotifier {
   final WeatherRepository _repository = WeatherRepository();
   final AppState appState;
 
-  ChatState(this.appState);
+  ChatState(this.appState) {
+    ApiService.instance.isRetrying.addListener(_onRetryingChanged);
+  }
+
+  void _onRetryingChanged() {
+    notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    ApiService.instance.isRetrying.removeListener(_onRetryingChanged);
+    super.dispose();
+  }
 
   final List<ChatMessage> messages = [
     ChatMessage(
@@ -72,9 +84,9 @@ class ChatState extends ChangeNotifier {
         question,
         appState.location!.latitude,
         appState.location!.longitude,
-        appState.conversationId,
-        locationName: appState.location!.name,
+        appState.conversationId,          locationName: appState.location!.name,
       );
+
       appState.conversationId =
           (answer['conversation_id'] as num?)?.toInt() ?? appState.conversationId;
       final answerText = answer['answer'] as String? ?? '…';

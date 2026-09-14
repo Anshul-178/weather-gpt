@@ -55,7 +55,10 @@ class AppState extends ChangeNotifier {
         await _useFallbackLocation(reason);
       }
     }
+    notifyListeners();
   }
+
+
 
   /// Detect the device's current location via GPS and load weather for it.
   ///
@@ -133,6 +136,7 @@ class AppState extends ChangeNotifier {
     await prefs.setDouble('lon', newLocation.longitude);
     await prefs.setString('loc_name', newLocation.name);
     await refreshWeather();
+    notifyListeners();
   }
 
   Future<void> refreshWeather() async {
@@ -154,6 +158,7 @@ class AppState extends ChangeNotifier {
         _refreshInFlight = null;
       }
     }
+    notifyListeners();
   }
 
   Future<void> _performRefreshWeather(GeoLocation target) async {
@@ -175,6 +180,7 @@ class AppState extends ChangeNotifier {
       error = 'Something went wrong. Please try again.';
     }
     loading = false;
+    debugAssertIsAttached();
     notifyListeners();
   }
 
@@ -234,11 +240,35 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  void debugAssertIsAttached() {
+    assert(() {
+      if (!_debugIsAttached) {
+        throw StateError(
+          'AppState notifyListeners() called after dispose. '
+          'Use a mounted-check or scope listeners to the widget lifecycle.');
+      }
+      return true;
+    }());
+  }
+
+  bool _debugIsAttached = true;
+
+  @override
+  void dispose() {
+    _debugIsAttached = false;
+    super.dispose();
+  }
+
   Future<void> logout() async {
     authToken = null;
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('auth_token');
     ApiService.instance.setAuthToken(null);
+    location = null;
+    current = null;
+    hourly = [];
+    daily = [];
+    error = null;
     notifyListeners();
   }
 }

@@ -7,13 +7,14 @@ import 'package:http/http.dart' as http;
 import '../config.dart';
 
 /// Transient status codes that are worth retrying.
-const _retryableStatusCodes = {408, 429, 500, 502, 503, 504};
+const retryableStatusCodes = {408, 429, 500, 502, 503, 504};
 
 /// Lightweight retry helper for transient failures.
 Future<T> retry<T>(
   Future<T> Function() fn, {
   int maxAttempts = 3,
   Duration baseDelay = const Duration(seconds: 2),
+  bool notifyRetrying = false,
 }) async {
   int attempt = 0;
   while (true) {
@@ -22,12 +23,22 @@ Future<T> retry<T>(
     } on ApiException catch (e) {
       attempt++;
       if (attempt >= maxAttempts || e.statusCode != null &&
-          !_retryableStatusCodes.contains(e.statusCode)) {
+          !retryableStatusCodes.contains(e.statusCode)) {
         rethrow;
       }
       final delay = baseDelay * (1 << (attempt - 1));
       debugPrint('Retry $attempt/$maxAttempts after ${delay.inSeconds}s: $e');
-      await Future.delayed(delay);
+      // Inform any listening UI that a retry is in progress.
+      if (notifyRetrying) {
+        try {
+          ApiService.instance.isRetrying.value = true;
+          await Future.delayed(delay);
+        } finally {
+          ApiService.instance.isRetrying.value = false;
+        }
+      } else {
+        await Future.delayed(delay);
+      }
     }
   }
 }
@@ -55,6 +66,9 @@ class ApiService {
   final http.Client _client = http.Client();
   String? _accessToken;
 
+  /// Controls for UI -- callers can listen to these via a simple accessor.
+  final ValueNotifier<bool> isRetrying = ValueNotifier<bool>(false);
+
   void setAuthToken(String? token) => _accessToken = token;
 
   Map<String, String> get _headers {
@@ -75,7 +89,7 @@ class ApiService {
           .get(_uri(path, query), headers: _headers)
           .timeout(AppConfig.requestTimeout);
       return _handle(response);
-    });
+    }, notifyRetrying: true);
   }
 
   Future<dynamic> post(String path, Map<String, dynamic> body) async {
@@ -84,7 +98,7 @@ class ApiService {
           .post(_uri(path), headers: _headers, body: jsonEncode(body))
           .timeout(AppConfig.requestTimeout);
       return _handle(response);
-    });
+    }, notifyRetrying: true);
   }
 
   Future<dynamic> patch(String path, Map<String, dynamic> body) async {
@@ -93,7 +107,7 @@ class ApiService {
           .patch(_uri(path), headers: _headers, body: jsonEncode(body))
           .timeout(AppConfig.requestTimeout);
       return _handle(response);
-    });
+    }, notifyRetrying: true);
   }
 
   Future<void> delete(String path) async {
@@ -104,7 +118,7 @@ class ApiService {
       if (response.statusCode >= 400) {
         throw ApiException(_extractMessage(response), response.statusCode);
       }
-    });
+    }, notifyRetrying: true);
   }
 
   dynamic _handle(http.Response response) {

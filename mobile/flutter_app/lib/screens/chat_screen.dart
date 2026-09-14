@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../models/chat.dart';
 import '../providers/chat_state.dart';
+import '../services/api_service.dart';
 import '../services/voice_service.dart';
 
 /// AI chat screen — opened from the floating "Ask AI" button.
@@ -215,6 +216,34 @@ class _ChatScreenState extends State<ChatScreen> {
                       color: scheme.onErrorContainer,
                       fontWeight: FontWeight.w600,
                       fontSize: 13,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          if (ApiService.instance.isRetrying.value)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 16),
+              color: scheme.primaryContainer.withValues(alpha: 0.6),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: scheme.onPrimaryContainer,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Retrying…',
+                    style: TextStyle(
+                      color: scheme.onPrimaryContainer,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 12,
                     ),
                   ),
                 ],

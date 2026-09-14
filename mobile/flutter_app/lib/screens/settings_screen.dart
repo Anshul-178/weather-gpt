@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../config.dart';
 import '../providers/app_state.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../repositories/weather_repository.dart';
 import '../services/api_service.dart';
 
@@ -34,10 +36,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _registeringPush = false;
   String? _pushStatus;
 
+  // Backend URL configuration.
+  final _apiUrlController = TextEditingController();
+  bool _savingUrl = false;
+  String? _urlStatus;
+
   /// Registers this device for push alerts. The FCM token normally comes
   /// from firebase_messaging; when Firebase is not configured the device is
   /// still registered with a local identifier so the pipeline is testable.
-  Future<void> _registerPush() async {
+  Future<void> _registerPush(BuildContext context) async {
     final app = context.read<AppState>();
     setState(() => _registeringPush = true);
     try {
@@ -76,6 +83,69 @@ class _SettingsScreenState extends State<SettingsScreen> {
     // to pubspec and configured. Dynamically import to keep the base build
     // Firebase-free.
     throw UnsupportedError('Firebase messaging not configured');
+  }
+
+  Future<void> _saveApiUrl(AppState app, String? url) async {
+    setState(() {
+      _savingUrl = true;
+      _urlStatus = null;
+    });
+    try {
+      await AppConfig.setCustomApiBaseUrl(url);
+      // Force a refresh so the new URL takes effect for the next request.
+      await app.refreshWeather();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Backend URL saved. Weather will use the new server.'),
+            duration: Duration(seconds: 3),
+          ),
+        );
+        setState(() => _urlStatus = 'Saved. Weather will use the new backend.');
+      }
+    } on Exception catch (e) {
+      debugPrint('Failed to save API URL: $e');
+      setState(() => _urlStatus = 'Could not save. Try again.');
+    } finally {
+      if (mounted) setState(() => _savingUrl = false);
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _apiUrlController.text = AppConfig.apiBaseUrl;
+  }
+
+  Future<void> _logout() async {
+    final app = context.read<AppState>();
+    await app.logout();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Signed out.'), duration: Duration(seconds: 2)),
+      );
+    }
+  }
+
+  Future<void> _clearLocation() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('lat');
+    await prefs.remove('lon');
+    await prefs.remove('loc_name');
+    final app = context.read<AppState>();
+    app.location = null;
+    app.current = null;
+    app.hourly = [];
+    app.daily = [];
+    app.error = null;
+    app.location = app.location; // trigger rebuild
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Text('Saved location cleared. Pick a new one on the Home screen.'),
+        duration: const Duration(seconds: 3),
+      ),
+    );
   }
 
   Future<void> _fetchScore() async {
@@ -197,7 +267,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 SizedBox(
                   width: double.infinity,
                   child: OutlinedButton.icon(
-                    onPressed: _registeringPush ? null : _registerPush,
+                    onPressed: _registeringPush ? null : () => _registerPush(context),
                     icon: _registeringPush
                         ? const SizedBox(
                             width: 18,
@@ -213,6 +283,68 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     _pushStatus!,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: Theme.of(context).colorScheme.onSurfaceVariant),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 24),
+        const _SectionHeader(
+          title: 'Backend URL',
+          subtitle: 'Point the app at a different WeatherGPT server',
+        ),
+        const SizedBox(height: 10),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'The app connects to a WeatherGPT FastAPI backend. '
+                  'Change this if you are running your own server or a '
+                  'staging instance. The default is the deployed Render backend.',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+                const SizedBox(height: 14),
+                TextField(
+                  decoration: const InputDecoration(
+                    labelText: 'API base URL',
+                    hintText: 'https://example.com',
+                  ),
+                  controller: _apiUrlController,
+                  onChanged: (value) =>
+                      setState(() => _apiUrlController.text = value.trim()),
+                  onSubmitted: (_) => _saveApiUrl(
+                      context.read<AppState>(), _apiUrlController.text),
+                  enabled: !_savingUrl,
+                ),
+                const SizedBox(height: 14),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: _savingUrl
+                        ? null
+                        : () => _saveApiUrl(
+                            context.read<AppState>(), _apiUrlController.text),
+                    icon: _savingUrl
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Icon(Icons.save_outlined),
+                    label: const Text('Save backend URL'),
+                  ),
+                ),
+                if (_urlStatus != null) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    _urlStatus!,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: _urlStatus!.startsWith('Saved')
+                            ? Theme.of(context).colorScheme.primary
+                            : Theme.of(context).colorScheme.error),
                   ),
                 ],
               ],
@@ -248,6 +380,41 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         'to retrieve weather data.'),
               ),
             ],
+          ),
+        ),
+        const SizedBox(height: 24),
+        const _SectionHeader(
+          title: 'Account & data',
+          subtitle: 'Sign out or clear saved data',
+        ),
+        const SizedBox(height: 10),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: app.isAuthenticated ? _logout : null,
+                  icon: const Icon(Icons.logout_outlined),
+                  label: const Text('Sign out'),
+                ),
+                const SizedBox(height: 10),
+                OutlinedButton.icon(
+                  onPressed: _clearLocation,
+                  icon: const Icon(Icons.location_off_outlined),
+                  label: const Text('Clear saved location'),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  app.isAuthenticated
+                      ? 'You are signed in. Sign out to switch accounts.'
+                      : 'You are not signed in. Sign in from the chat screen.',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant),
+                ),
+              ],
+            ),
           ),
         ),
       ],
