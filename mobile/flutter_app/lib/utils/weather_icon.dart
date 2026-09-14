@@ -1,11 +1,38 @@
 import 'package:flutter/material.dart';
 
-/// Maps weather condition text to a matching icon.
+/// WMO weather interpretation codes (Open-Meteo standard).
+/// See: https://open-meteo.com/en/docs/#weathervariables
+class WeatherCode {
+  final int code;
+  const WeatherCode(this.code);
+
+  bool get isThunderstorm => code >= 200 && code < 300;
+  bool get isRain => (code >= 500 && code < 600) ||
+      (code >= 955 && code <= 962);
+  bool get isHeavyRain => code >= 502 && code < 600;
+  bool get isSnow => code >= 700 && code < 800;
+  bool get isFog => code >= 71 && code <= 77;
+  bool get isCloudy => code >= 400 && code < 500;
+  bool get isClear => code == 0 || code == 1;
+}
+
+/// Maps weather condition text (and WMO codes) to a matching icon.
 class WeatherIcon {
   WeatherIcon._();
 
-  static IconData fromCondition(String? condition) {
-    final c = (condition ?? '').toLowerCase();
+  /// Primary entry point: uses condition text, falls back to weather_code.
+  static IconData fromCondition(String? condition, [int? weatherCode]) {
+    if (condition != null && condition.isNotEmpty) {
+      return _fromConditionText(condition);
+    }
+    if (weatherCode != null) {
+      return _fromWeatherCode(weatherCode);
+    }
+    return Icons.wb_twilight_rounded;
+  }
+
+  static IconData _fromConditionText(String condition) {
+    final c = condition.toLowerCase();
     if (c.contains('thunder')) return Icons.flash_on_rounded;
     if (c.contains('drizzle') || c.contains('rain')) {
       return c.contains('heavy')
@@ -23,6 +50,18 @@ class WeatherIcon {
     if (c.contains('clear') || c.contains('sunny') || c.contains('sun')) {
       return Icons.wb_sunny_rounded;
     }
+    return Icons.wb_twilight_rounded;
+  }
+
+  static IconData _fromWeatherCode(int code) {
+    final wc = WeatherCode(code);
+    if (wc.isThunderstorm) return Icons.flash_on_rounded;
+    if (wc.isHeavyRain) return Icons.umbrella_rounded;
+    if (wc.isRain) return Icons.water_drop_rounded;
+    if (wc.isSnow) return Icons.ac_unit_rounded;
+    if (wc.isFog) return Icons.blur_on_rounded;
+    if (wc.isCloudy) return Icons.cloud_queue_rounded;
+    if (wc.isClear) return Icons.wb_sunny_rounded;
     return Icons.wb_twilight_rounded;
   }
 

@@ -31,6 +31,7 @@ class CurrentWeather {
   final double? visibility;
   final double? uvIndex;
   final String? condition;
+  final int? weatherCode;
   final bool? isDay;
 
   const CurrentWeather({
@@ -46,6 +47,7 @@ class CurrentWeather {
     this.visibility,
     this.uvIndex,
     this.condition,
+    this.weatherCode,
     this.isDay,
   });
 
@@ -63,6 +65,7 @@ class CurrentWeather {
         visibility: (json['visibility'] as num?)?.toDouble(),
         uvIndex: (json['uv_index'] as num?)?.toDouble(),
         condition: json['condition'] as String?,
+        weatherCode: (json['weather_code'] as num?)?.toInt(),
         isDay: json['is_day'] as bool?,
       );
 }
@@ -73,6 +76,7 @@ class HourlyPoint {
   final double? precipitationProbability;
   final double? windSpeed;
   final String? condition;
+  final int? weatherCode;
 
   const HourlyPoint({
     required this.time,
@@ -80,6 +84,7 @@ class HourlyPoint {
     this.precipitationProbability,
     this.windSpeed,
     this.condition,
+    this.weatherCode,
   });
 
   factory HourlyPoint.fromJson(Map<String, dynamic> json) => HourlyPoint(
@@ -90,6 +95,7 @@ class HourlyPoint {
             (json['precipitation_probability'] as num?)?.toDouble(),
         windSpeed: (json['wind_speed'] as num?)?.toDouble(),
         condition: json['condition'] as String?,
+        weatherCode: (json['weather_code'] as num?)?.toInt(),
       );
 }
 
@@ -101,6 +107,7 @@ class DailyPoint {
   final double? windSpeedMax;
   final double? uvIndexMax;
   final String? condition;
+  final int? weatherCode;
 
   const DailyPoint({
     required this.date,
@@ -110,6 +117,7 @@ class DailyPoint {
     this.windSpeedMax,
     this.uvIndexMax,
     this.condition,
+    this.weatherCode,
   });
 
   factory DailyPoint.fromJson(Map<String, dynamic> json) => DailyPoint(
@@ -121,6 +129,7 @@ class DailyPoint {
         windSpeedMax: (json['wind_speed_max'] as num?)?.toDouble(),
         uvIndexMax: (json['uv_index_max'] as num?)?.toDouble(),
         condition: json['condition'] as String?,
+        weatherCode: (json['weather_code'] as num?)?.toInt(),
       );
 }
 

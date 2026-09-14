@@ -252,7 +252,8 @@ class _HeroCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
                       Icon(
-                        WeatherIcon.fromCondition(current?.condition),
+                        WeatherIcon.fromCondition(
+                            current?.condition, current?.weatherCode),
                         color: Colors.white.withValues(alpha: 0.9),
                         size: 44,
                       ),
@@ -532,7 +533,8 @@ class _HourCard extends StatelessWidget {
                 color: Theme.of(context).colorScheme.onSurfaceVariant),
           ),
           const SizedBox(height: 6),
-          Icon(WeatherIcon.fromCondition(hour.condition),
+          Icon(
+              WeatherIcon.fromCondition(hour.condition, hour.weatherCode),
               size: 22, color: Theme.of(context).colorScheme.primary),
           const SizedBox(height: 6),
           Text('${hour.temperature?.round() ?? '--'}°',
@@ -573,7 +575,8 @@ class _DayRow extends StatelessWidget {
                   ?.copyWith(fontWeight: FontWeight.w700),
             ),
           ),
-          Icon(WeatherIcon.fromCondition(day.condition),
+          Icon(
+              WeatherIcon.fromCondition(day.condition, day.weatherCode),
               size: 22, color: Theme.of(context).colorScheme.primary),
           const SizedBox(width: 10),
           Expanded(

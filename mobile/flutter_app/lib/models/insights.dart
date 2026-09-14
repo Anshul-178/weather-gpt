@@ -271,25 +271,40 @@ class AviationBriefing {
 
 class CitySnapshot {
   final String name;
+  final double latitude;
+  final double longitude;
   final double? temperature;
+  final double? feelsLike;
   final double? humidity;
   final double? windSpeed;
+  final double? precipitation;
   final String? condition;
+  final int? weatherCode;
 
   const CitySnapshot({
     required this.name,
+    required this.latitude,
+    required this.longitude,
     this.temperature,
+    this.feelsLike,
     this.humidity,
     this.windSpeed,
+    this.precipitation,
     this.condition,
+    this.weatherCode,
   });
 
   factory CitySnapshot.fromJson(Map<String, dynamic> json) => CitySnapshot(
         name: json['name'] as String? ?? 'Unknown',
+        latitude: (json['latitude'] as num?)?.toDouble() ?? 0,
+        longitude: (json['longitude'] as num?)?.toDouble() ?? 0,
         temperature: (json['temperature'] as num?)?.toDouble(),
+        feelsLike: (json['feels_like'] as num?)?.toDouble(),
         humidity: (json['humidity'] as num?)?.toDouble(),
         windSpeed: (json['wind_speed'] as num?)?.toDouble(),
+        precipitation: (json['precipitation'] as num?)?.toDouble(),
         condition: json['condition'] as String?,
+        weatherCode: (json['weather_code'] as num?)?.toInt(),
       );
 }
 

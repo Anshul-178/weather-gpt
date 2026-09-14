@@ -78,10 +78,14 @@ class ChatState extends ChangeNotifier {
       appState.conversationId =
           (answer['conversation_id'] as num?)?.toInt() ?? appState.conversationId;
       final answerText = answer['answer'] as String? ?? '…';
+      final timestamp = answer['timestamp'];
+      final msgTime = timestamp != null
+          ? DateTime.tryParse(timestamp as String) ?? DateTime.now()
+          : DateTime.now();
       messages.add(ChatMessage(
         text: answerText,
         isUser: false,
-        time: DateTime.now(),
+        time: msgTime,
       ));
 
       if (speakResponse ?? autoSpeak) {

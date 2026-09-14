@@ -5,7 +5,6 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../config.dart';
-import '../models/weather.dart';
 
 /// Errors surfaced to the UI in a friendly form.
 class ApiException implements Exception {

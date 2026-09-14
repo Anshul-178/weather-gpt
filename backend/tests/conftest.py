@@ -24,8 +24,13 @@ def _clear_cache():
 
 @pytest.fixture(autouse=True)
 def _sqlite_url(monkeypatch):
-    """Force SQLite for tests regardless of local .env."""
+    """Force SQLite + Open-Meteo for tests regardless of local .env."""
     monkeypatch.setenv("DATABASE_URL", "sqlite+aiosqlite:///./test_weathergpt.db")
+    # Use Open-Meteo (free, no key) instead of whatever .env has.
+    # Patch the cached settings object directly since lru_cache is already populated.
+    import app.config
+    monkeypatch.setattr(app.config.settings, "weather_api_base_url", "https://api.open-meteo.com/v1")
+    monkeypatch.setattr(app.config.settings, "weather_api_key", None)
 
 
 @pytest_asyncio.fixture

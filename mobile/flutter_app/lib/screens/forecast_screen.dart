@@ -245,7 +245,8 @@ class _ForecastHourCard extends StatelessWidget {
                 color: Theme.of(context).colorScheme.onSurfaceVariant),
           ),
           const SizedBox(height: 5),
-          Icon(WeatherIcon.fromCondition(hour.condition),
+          Icon(
+              WeatherIcon.fromCondition(hour.condition, hour.weatherCode),
               size: 22, color: Theme.of(context).colorScheme.primary),
           const SizedBox(height: 5),
           Text('${hour.temperature?.round() ?? '--'}°',
@@ -298,7 +299,8 @@ class _ForecastDayRow extends StatelessWidget {
               ],
             ),
           ),
-          Icon(WeatherIcon.fromCondition(day.condition),
+          Icon(
+              WeatherIcon.fromCondition(day.condition, day.weatherCode),
               size: 24, color: Theme.of(context).colorScheme.primary),
           const SizedBox(width: 10),
           Expanded(
