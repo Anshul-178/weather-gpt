@@ -457,7 +457,11 @@ class WeatherService:
             params = {**params, "apikey": settings.weather_api_key}
         max_attempts = 3
         async with httpx.AsyncClient(
-            timeout=settings.weather_timeout_seconds
+            timeout=settings.weather_timeout_seconds,
+            # Some provider endpoints redirect (HTTP 303) to their canonical
+            # HTTPS URL. Follow that redirect instead of surfacing it as a
+            # backend 503.
+            follow_redirects=True,
         ) as client:
             for attempt in range(max_attempts):
                 try:

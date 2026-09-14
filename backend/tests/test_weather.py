@@ -257,6 +257,47 @@ async def test_weather_provider_maps_429_to_rate_limit_error(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_weather_provider_follows_redirects(monkeypatch):
+    """Provider redirects are followed instead of being returned as 503s."""
+
+    captured = {}
+
+    class _Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"ok": True}
+
+    class _Client:
+        def __init__(self, *args, **kwargs):
+            captured.update(kwargs)
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc_info):
+            return False
+
+        async def get(self, *args, **kwargs):
+            return _Response()
+
+    class _FakeHTTPX:
+        AsyncClient = _Client
+        TimeoutException = httpx.TimeoutException
+        HTTPStatusError = httpx.HTTPStatusError
+        HTTPError = httpx.HTTPError
+
+    monkeypatch.setattr(weather_module, "httpx", _FakeHTTPX)
+    result = await WeatherService()._request(
+        "https://api.open-meteo.com/v1/forecast", {}
+    )
+
+    assert result == {"ok": True}
+    assert captured["follow_redirects"] is True
+
+
+@pytest.mark.asyncio
 async def test_forecast_endpoint_success(client, monkeypatch, provider_forecast_payload):
     """GET /weather/forecast returns daily and hourly arrays."""
     _mock_provider(monkeypatch, {}, provider_forecast_payload)

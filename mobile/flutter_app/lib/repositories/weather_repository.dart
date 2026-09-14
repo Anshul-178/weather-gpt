@@ -53,17 +53,6 @@ class WeatherRepository {
         [];
   }
 
-  // ---------------- AQI ---------------- //
-
-  Future<AQIResponse> fetchAQI(double lat, double lon, String locationName) async {
-    final json = await _api.get('/weather/aqi', {
-      'latitude': lat.toString(),
-      'longitude': lon.toString(),
-      'location_name': locationName,
-    });
-    return AQIResponse.fromJson(json);
-  }
-
   // ---------------- Chat ---------------- //
 
   Future<Map<String, dynamic>> sendChat(

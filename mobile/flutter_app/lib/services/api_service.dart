@@ -139,15 +139,3 @@ class ApiService {
 
   void dispose() => _client.close();
 }
-
-
-extension ApiServiceAQI on ApiService {
-  Future<AQIResponse> getAQI(double latitude, double longitude, String locationName) async {
-    final response = await get('/weather/aqi', {
-      'latitude': latitude.toString(),
-      'longitude': longitude.toString(),
-      'location_name': locationName,
-    });
-    return AQIResponse.fromJson(response);
-  }
-}

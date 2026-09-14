@@ -19,7 +19,6 @@ class Intent(str, Enum):
     WIND = "WIND"
     HUMIDITY = "HUMIDITY"
     UV = "UV"
-    AIR_QUALITY = "AIR_QUALITY"
     WEATHER_COMPARISON = "WEATHER_COMPARISON"
     ACTIVITY_RECOMMENDATION = "ACTIVITY_RECOMMENDATION"
     TRAVEL = "TRAVEL"
@@ -35,7 +34,6 @@ _PATTERNS: list[tuple[Intent, str]] = [
     (Intent.TRAVEL, r"\b(travel|commute|drive|driving|road trip|flight|pack(ing)?)\b"),
     (Intent.RAIN, r"\b(rain|raining|drizzle|shower|umbrella|precipitation)\b"),
     (Intent.UV, r"\b(uv|sunburn|sunscreen)\b"),
-    (Intent.AIR_QUALITY, r"\b(air quality|aqi|pollution|pollen)\b"),
     (Intent.WIND, r"\b(wind|windy|gust|breeze)\b"),
     (Intent.HUMIDITY, r"\b(humidity|humid|muggy)\b"),
     (Intent.TEMPERATURE, r"\b(temperature|hot|cold|warm|cool|degrees|°c|°f)\b"),

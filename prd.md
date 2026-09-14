@@ -134,7 +134,6 @@ Examples:
 - Wind
 - UV index
 - Visibility
-- Air-quality information where available
 - Weather comparisons
 
 The assistant should maintain enough conversational context to understand follow-up questions.
@@ -164,7 +163,6 @@ Display and explain:
 - Cloud coverage
 - Visibility
 - UV index
-- Air quality where available
 
 ---
 
@@ -240,7 +238,6 @@ Factors may include:
 - Humidity
 - UV
 - Visibility
-- Air quality
 
 The score should be explainable rather than a black-box number.
 
@@ -559,7 +556,6 @@ weather_code
 Optional:
 
 ```text
-air_quality
 pollen
 sunrise
 sunset
@@ -788,7 +784,6 @@ Add:
 - Better conversation memory
 - Historical weather
 - Travel assistant
-- Air-quality integration
 
 ---
 

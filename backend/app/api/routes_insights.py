@@ -21,7 +21,6 @@ from app.schemas.insights import (
     HistoricalWeatherResponse,
 )
 from app.schemas.weather import GeoLocation
-from app.services.aqi_service import AQIServiceError, aqi_service
 from app.services.aviation_service import aviation_service
 from app.services.cached_weather_service import cached_weather_service
 from app.services.crop_advisory_service import crop_advisory_service
@@ -212,7 +211,7 @@ async def _serve_stale_climate(
 
 
 async def _gather_cities(city_list: list[dict[str, object]]) -> list[CityWeatherSnapshot]:
-    """Fetch current weather (+AQI) for all cities concurrently."""
+    """Fetch current weather for all cities concurrently."""
     async def fetch_one(city: dict[str, object]) -> CityWeatherSnapshot:
         name = str(city["name"])
         lat = float(city["latitude"])  # type: ignore[arg-type]
@@ -237,11 +236,6 @@ async def _gather_cities(city_list: list[dict[str, object]]) -> list[CityWeather
             return CityWeatherSnapshot(
                 name=name, latitude=lat, longitude=lon, condition="unavailable"
             )
-        try:
-            aqi = await aqi_service.get_current_aqi(lat, lon, name)
-            snapshot.aqi = aqi.current.aqi
-        except AQIServiceError:
-            snapshot.aqi = None
         return snapshot
 
     return list(await asyncio.gather(*(fetch_one(city) for city in city_list)))

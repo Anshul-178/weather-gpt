@@ -337,8 +337,8 @@ class _ChatScreenState extends State<ChatScreen> {
                         hintText: _isListening
                             ? 'Listening...'
                             : (_selectedLocale == 'hi_IN'
-                                ? 'मौसम या हवा की गुणवत्ता पूछें...'
-                                : 'Ask about the weather or air quality…'),
+                                ? 'मौसम के बारे में पूछें...'
+                                : 'Ask about the weather…'),
                       ),
                       onSubmitted: (_) => _send(chat),
                     ),

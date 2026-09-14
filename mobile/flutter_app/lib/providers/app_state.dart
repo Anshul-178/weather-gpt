@@ -19,13 +19,13 @@ class AppState extends ChangeNotifier {
   CurrentWeather? current;
   List<HourlyPoint> hourly = [];
   List<DailyPoint> daily = [];
-  AQIResponse? aqi;
 
   bool loading = false;
   String? error;
 
   String? authToken;
   int? conversationId;
+  Future<void>? _refreshInFlight;
 
   AppState() {
     _restore();
@@ -136,15 +136,35 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> refreshWeather() async {
-    if (location == null) return;
+    final inFlight = _refreshInFlight;
+    if (inFlight != null) {
+      await inFlight;
+      return;
+    }
+
+    final target = location;
+    if (target == null) return;
+
+    final request = _performRefreshWeather(target);
+    _refreshInFlight = request;
+    try {
+      await request;
+    } finally {
+      if (identical(_refreshInFlight, request)) {
+        _refreshInFlight = null;
+      }
+    }
+  }
+
+  Future<void> _performRefreshWeather(GeoLocation target) async {
     loading = true;
     error = null;
     notifyListeners();
     try {
       final bundle = await _repository.fetchWeather(
-        location!.latitude,
-        location!.longitude,
-        locationName: location!.name,
+        target.latitude,
+        target.longitude,
+        locationName: target.name,
       );
       current = bundle.current;
       hourly = _upcomingHours(bundle.hourly);
@@ -153,17 +173,6 @@ class AppState extends ChangeNotifier {
       error = e.message;
     } catch (_) {
       error = 'Something went wrong. Please try again.';
-    }
-    // Fetch AQI separately — non-fatal if it fails.
-    try {
-      aqi = await _repository.fetchAQI(
-        location!.latitude,
-        location!.longitude,
-        location!.name,
-      );
-    } catch (e) {
-      debugPrint('AQI fetch error: $e');
-      aqi = null;
     }
     loading = false;
     notifyListeners();

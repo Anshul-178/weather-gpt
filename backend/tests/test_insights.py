@@ -454,7 +454,6 @@ def test_dispatch_log_records_entries():
 
 @pytest.mark.asyncio
 async def test_city_overview_endpoint(client, monkeypatch):
-    from app.services import aqi_service as aqi_module
     from app.services import weather_service as weather_module
 
     async def fake_current(latitude, longitude, location=None):
@@ -464,11 +463,7 @@ async def test_city_overview_endpoint(client, monkeypatch):
             current=CurrentWeather(temperature=30.0, condition="Clear sky"),
         )
 
-    async def fake_aqi(latitude, longitude, location_name="Unknown"):
-        raise aqi_module.AQIServiceError("skip aqi in test")
-
     monkeypatch.setattr(weather_module.weather_service, "get_current", fake_current)
-    monkeypatch.setattr(aqi_module.aqi_service, "get_current_aqi", fake_aqi)
 
     response = await client.get("/weather/city-overview")
     assert response.status_code == 200

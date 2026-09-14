@@ -19,16 +19,11 @@ from app.models.user import User
 from app.schemas.chat import ChatRequest, ChatResponse, TtsRequest
 from app.services.ai_service import FALLBACK_NO_DATA, ai_service
 from app.services.auth_service import get_current_user_optional
-from app.services.aqi_service import aqi_service, AQIServiceError
 from app.services.activity_engine import compute_activity_score
 from app.services.cached_weather_service import cached_weather_service
 from app.services.edge_tts_service import edge_tts_service
 from app.services.location_service import location_service
 from app.services.weather_service import WeatherProviderError
-from app.utils.logging import get_logger
-
-logger = get_logger(__name__)
-
 router = APIRouter(tags=["chat"])
 
 
@@ -77,13 +72,6 @@ async def chat(
             conversation_id=conversation.id if conversation else None,
         )
 
-    # Fetch AQI (non-fatal: chat still works if AQI fails)
-    aqi = None
-    try:
-        aqi = await aqi_service.get_current_aqi(lat, lon, place)
-    except AQIServiceError:
-        logger.debug("AQI unavailable for chat context at %s,%s", lat, lon)
-
     intent = detect_intent(body.message)
     follow_up = is_follow_up(body.message) and bool(history)
     _ = follow_up  # resolved implicitly through bounded history passed to LLM
@@ -103,7 +91,6 @@ async def chat(
         conversation_history=history,
         activity_result=activity_result,
         rag_enabled=settings.rag_enabled,
-        aqi=aqi,
     )
 
     conversation = await _persist_exchange(db, conversation, user, body.message, result["answer"])

@@ -30,7 +30,7 @@ alerts. The weather provider is always the source of truth — the AI never inve
 - 🌾 **Crop advisories** — deterministic irrigation/spraying/disease/harvest guidance for 10 Indian
   crops from live forecast data
 - ✈️ **Aviation briefing** — VFR-style go/no-go assessment with best-flight-window suggestions
-- 🏙️ **City overview** — current conditions + AQI across 10 Indian cities (smart-city monitoring)
+- 🏙️ **City overview** — current conditions across 10 Indian cities (smart-city monitoring)
 - 📍 **Locations** — search (geocoding), save, switch, delete
 - 🔐 **Auth** — JWT with bcrypt-hashed passwords
 - 🧠 **Optional RAG** — Chroma-backed reference retrieval (never a replacement for live weather data)
@@ -118,7 +118,6 @@ Default Open-Meteo endpoints:
 | Provider | Endpoint |
 |---|---|
 | Weather Forecast API | `https://api.open-meteo.com/v1/forecast` |
-| Air Quality API | `https://air-quality-api.open-meteo.com/v1/air-quality` |
 | Geocoding API | `https://geocoding-api.open-meteo.com/v1/search` |
 
 To use OpenWeather, set these values in `backend/.env`:
@@ -128,7 +127,7 @@ WEATHER_API_BASE_URL=https://api.openweathermap.org/data/2.5
 WEATHER_API_KEY=your_openweather_appid
 ```
 
-The backend keeps Open-Meteo for geocoding and AQI unless those services are separately changed.
+The backend keeps Open-Meteo for weather and geocoding unless those services are separately changed.
 
 ## Environment variables
 
@@ -137,7 +136,6 @@ See `backend/.env.example` (placeholders only — never commit a real `.env`):
 | Variable | Purpose |
 |---|---|
 | `WEATHER_API_KEY` / `WEATHER_API_BASE_URL` | Weather provider; OpenWeather requires a key |
-| `AIR_QUALITY_API_BASE_URL` | Open-Meteo Air Quality API base URL |
 | `GEOCODING_API_BASE_URL` | Open-Meteo Geocoding API base URL |
 | `LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL` | Any OpenAI-compatible LLM (optional) |
 | `DATABASE_URL` | `postgresql+asyncpg://…` in production; SQLite default in dev |
@@ -196,7 +194,7 @@ required.
 | GET | `/weather/climate?years=5` | Monthly climate aggregates + warming trend |
 | POST | `/weather/crop-advisory` | Deterministic crop-weather advisories |
 | POST | `/weather/aviation` | VFR-style aviation briefing |
-| GET | `/weather/city-overview` | Multi-city current conditions + AQI |
+| GET | `/weather/city-overview` | Multi-city current conditions |
 | GET | `/weather/models` | Selectable NWP models |
 | GET | `/weather/forecast?model=gfs_seamless` | Forecast from a specific NWP model |
 | POST | `/chat` | AI weather Q&A (weather context injected) |

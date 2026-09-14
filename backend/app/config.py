@@ -34,11 +34,9 @@ class Settings(BaseSettings):
     # to use OpenWeather for current conditions and the 5-day forecast:
     #   https://api.openweathermap.org/data/2.5
     #   Weather Forecast API  → https://api.open-meteo.com/v1/forecast
-    #   Air Quality API       → https://air-quality-api.open-meteo.com/v1/air-quality
-    #   Geocoding API         → https://geocoding-api.open-meteo.com/v1/search
+#   Geocoding API         → https://geocoding-api.open-meteo.com/v1/search
     weather_api_key: Optional[str] = None
     weather_api_base_url: str = "https://api.open-meteo.com/v1"
-    air_quality_api_base_url: str = "https://air-quality-api.open-meteo.com/v1"
     geocoding_api_base_url: str = "https://geocoding-api.open-meteo.com/v1"
     weather_timeout_seconds: float = 10.0
 
@@ -53,7 +51,6 @@ class Settings(BaseSettings):
     cache_current_ttl_seconds: int = 600  # 5-15 min per technical.md
     cache_forecast_ttl_seconds: int = 1800  # 30-60 min
     cache_geocode_ttl_seconds: int = 21600  # several hours
-    cache_aqi_ttl_seconds: int = 900  # AQI changes slowly; ~15 min
     cache_historical_ttl_seconds: int = 3600  # past observations are immutable per day
     cache_climate_ttl_seconds: int = 86400  # climate trends are recomputed rarely
 

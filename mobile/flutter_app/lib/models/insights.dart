@@ -275,7 +275,6 @@ class CitySnapshot {
   final double? humidity;
   final double? windSpeed;
   final String? condition;
-  final int? aqi;
 
   const CitySnapshot({
     required this.name,
@@ -283,7 +282,6 @@ class CitySnapshot {
     this.humidity,
     this.windSpeed,
     this.condition,
-    this.aqi,
   });
 
   factory CitySnapshot.fromJson(Map<String, dynamic> json) => CitySnapshot(
@@ -292,7 +290,6 @@ class CitySnapshot {
         humidity: (json['humidity'] as num?)?.toDouble(),
         windSpeed: (json['wind_speed'] as num?)?.toDouble(),
         condition: json['condition'] as String?,
-        aqi: (json['aqi'] as num?)?.toInt(),
       );
 }
 

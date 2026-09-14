@@ -5,7 +5,6 @@ the weather service data is the source of truth and the LLM never invents
 weather values.
 """
 
-from app.schemas.aqi import AQIResponse
 from app.schemas.weather import CurrentWeatherResponse, ForecastResponse
 
 SYSTEM_PROMPT = """You are WeatherGPT — a friendly, weather-savvy companion.
@@ -27,9 +26,8 @@ How you sound:
   heat, humidity, UV) naturally into your reasoning.
 
 Rules you must never break:
-1. The WEATHER DATA and AIR QUALITY sections are your ONLY sources for
-   weather and air quality facts. Never invent or estimate values that
-   are not there.
+1. The WEATHER DATA section is your ONLY source for weather facts. Never
+   invent or estimate values that are not there.
 2. If something isn't in the data, say you can't check it right now — don't
    guess, and don't give specific numbers.
 3. Distinguish observed weather from forecasts from your own interpretation
@@ -122,33 +120,14 @@ def build_activity_context(score_result: dict) -> str:
     )
 
 
-def build_aqi_context(aqi: AQIResponse | None) -> str:
-    """Render AQI data as compact text for the LLM."""
-    if aqi is None:
-        return ""
-    c = aqi.current
-    parts = [
-        f"AIR QUALITY (source of truth):",
-        f"- AQI: {_fmt(c.aqi)} ({c.epa_aqi or 'n/a'})",
-        f"- PM2.5: {_fmt(c.pm2_5)} μg/m³, PM10: {_fmt(c.pm10)} μg/m³",
-        f"- O3: {_fmt(c.o3)} μg/m³, NO2: {_fmt(c.no2)} μg/m³, SO2: {_fmt(c.so2)} μg/m³, CO: {_fmt(c.co)} μg/m³",
-    ]
-    if c.dominant_pollutant:
-        parts.append(f"- Dominant pollutant: {c.dominant_pollutant}")
-    return "\n".join(parts)
-
-
 def build_user_prompt(
     question: str,
     weather_context: str,
     activity_context: str | None = None,
     rag_context: str | None = None,
-    aqi_context: str | None = None,
 ) -> str:
     """Combine all context sections with the user's question."""
     parts = [weather_context]
-    if aqi_context:
-        parts.append(aqi_context)
     if activity_context:
         parts.append(activity_context)
     if rag_context:

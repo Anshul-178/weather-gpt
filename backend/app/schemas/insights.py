@@ -165,7 +165,6 @@ class CityWeatherSnapshot(BaseModel):
     precipitation: Optional[float] = None
     condition: Optional[str] = None
     weather_code: Optional[int] = None
-    aqi: Optional[int] = None
 
 
 class CityOverviewResponse(BaseModel):

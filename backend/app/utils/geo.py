@@ -22,11 +22,6 @@ def cache_key_geocode(name: str) -> str:
     return f"geocode:{name.strip().lower()}"
 
 
-def cache_key_aqi(latitude: float, longitude: float) -> str:
-    """Cache key for current AQI."""
-    return f"aqi:{round_coord(latitude)}:{round_coord(longitude)}"
-
-
 def cache_key_historical(latitude: float, longitude: float, days: int) -> str:
     """Cache key for historical daily observations.
 

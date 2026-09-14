@@ -16,7 +16,7 @@ class ChatState extends ChangeNotifier {
   final List<ChatMessage> messages = [
     ChatMessage(
       text: 'Hi! Ask me anything about the weather — rain, temperature, '
-          'air quality, what to wear, or whether it\'s a good day for cricket.',
+          'what to wear, or whether it\'s a good day for cricket.',
       isUser: false,
       time: DateTime.now(),
     ),
@@ -31,7 +31,6 @@ class ChatState extends ChangeNotifier {
     'What should I wear today?',
     'क्या आज बारिश होगी?',
     'Is tomorrow good for cycling?',
-    'How is the air quality?',
   ];
 
   void setAutoSpeak(bool value) {

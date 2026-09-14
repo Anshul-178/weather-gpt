@@ -194,12 +194,37 @@ class _Shell extends StatefulWidget {
 class _ShellState extends State<_Shell> {
   int _index = 0;
 
-  static const _screens = [
-    HomeScreen(),
-    ForecastScreen(),
-    AdvisoriesScreen(),
-    SettingsScreen(),
+  late final List<Widget> _screens = [
+    const HomeScreen(),
+    const SizedBox.shrink(),
+    const SizedBox.shrink(),
+    const SizedBox.shrink(),
   ];
+
+  final List<bool> _screenLoaded = [true, false, false, false];
+
+  Widget _createScreen(int index) {
+    switch (index) {
+      case 1:
+        return const ForecastScreen();
+      case 2:
+        return const AdvisoriesScreen();
+      case 3:
+        return const SettingsScreen();
+      default:
+        return const HomeScreen();
+    }
+  }
+
+  void _selectScreen(int index) {
+    setState(() {
+      if (!_screenLoaded[index]) {
+        _screens[index] = _createScreen(index);
+        _screenLoaded[index] = true;
+      }
+      _index = index;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -266,7 +291,7 @@ class _ShellState extends State<_Shell> {
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,
-        onDestinationSelected: (value) => setState(() => _index = value),
+        onDestinationSelected: _selectScreen,
         destinations: const [
           NavigationDestination(
               icon: Icon(Icons.home_outlined),

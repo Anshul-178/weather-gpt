@@ -23,6 +23,8 @@ class _AdvisoriesScreenState extends State<AdvisoriesScreen> {
   CityOverview? _cities;
   bool _loading = false;
   String? _error;
+  String? _loadedLocationKey;
+  bool _citiesLoadStarted = false;
 
   String _selectedCrop = '';
   static const List<(String, String)> _crops = [
@@ -40,10 +42,23 @@ class _AdvisoriesScreenState extends State<AdvisoriesScreen> {
   ];
 
   @override
-  void initState() {
-    super.initState();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final app = context.watch<AppState>();
+    final location = app.location;
+    if (location == null) return;
+
+    final locationKey =
+        '${location.latitude.toStringAsFixed(2)}:${location.longitude.toStringAsFixed(2)}';
+    if (_loadedLocationKey == locationKey) return;
+    _loadedLocationKey = locationKey;
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _loadCities();
+      if (!mounted) return;
+      if (!_citiesLoadStarted) {
+        _citiesLoadStarted = true;
+        _loadCities();
+      }
       _loadAdvisories();
     });
   }
@@ -503,20 +518,6 @@ class _CityRow extends StatelessWidget {
                   ?.copyWith(fontWeight: FontWeight.w600),
             ),
           ),
-          if (city.aqi != null) ...[
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-              decoration: BoxDecoration(
-                color: scheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                'AQI ${city.aqi}',
-                style: Theme.of(context).textTheme.labelSmall,
-              ),
-            ),
-            const SizedBox(width: 10),
-          ],
           SizedBox(
             width: 110,
             child: Text(

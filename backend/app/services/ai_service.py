@@ -20,13 +20,11 @@ from app.ai import intents as intent_module
 from app.ai.prompts import (
     SYSTEM_PROMPT,
     build_activity_context,
-    build_aqi_context,
     build_user_prompt,
     build_weather_context,
 )
 from app.ai.retriever import maybe_retrieve
 from app.config import settings
-from app.schemas.aqi import AQIResponse
 from app.schemas.weather import CurrentWeatherResponse, ForecastResponse
 from app.utils.logging import get_logger
 
@@ -54,15 +52,13 @@ class AIService:
         conversation_history: Optional[list[dict]] = None,
         activity_result: Optional[dict] = None,
         rag_enabled: bool = False,
-        aqi: Optional[AQIResponse] = None,
     ) -> dict:
-        """Answer a weather question using live weather + AQI context.
+        """Answer a weather question using live weather context.
 
         Returns a dict with keys: answer, sources.
         """
         has_weather = current is not None or forecast is not None
         weather_context = build_weather_context(current, forecast)
-        aqi_context = build_aqi_context(aqi)
         activity_context = (
             build_activity_context(activity_result) if activity_result else None
         )
@@ -80,7 +76,7 @@ class AIService:
         if settings.gemini_api_key:
             try:
                 answer = await self._call_llm(
-                    question, weather_context, activity_context, rag_context, history, aqi_context
+                    question, weather_context, activity_context, rag_context, history
                 )
                 return self._validate_answer(answer, weather_context, sources=["weather_api", "llm"])
             except LLMError as exc:
@@ -89,7 +85,7 @@ class AIService:
                 logger.warning("Unexpected LLM error, using fallback: %s", exc)
 
         answer = self._rule_based_answer(
-            question, current, forecast, activity_result, location_name, aqi
+            question, current, forecast, activity_result, location_name
         )
         return self._validate_answer(answer, weather_context, sources=["weather_api", "rules"])
 
@@ -104,7 +100,6 @@ class AIService:
         activity_context: Optional[str],
         rag_context: Optional[str],
         history: list[dict],
-        aqi_context: Optional[str] = None,
     ) -> str:
         """Call Google Gemini Flash via LangChain."""
         llm = ChatGoogleGenerativeAI(
@@ -123,7 +118,7 @@ class AIService:
                 messages.append(AIMessage(content=msg["content"]))
 
         user_prompt = build_user_prompt(
-            question, weather_context, activity_context, rag_context, aqi_context
+            question, weather_context, activity_context, rag_context
         )
         messages.append(HumanMessage(content=user_prompt))
 
@@ -192,7 +187,6 @@ class AIService:
         forecast: Optional[ForecastResponse],
         activity_result: Optional[dict],
         location_name: Optional[str],
-        aqi: Optional[AQIResponse] = None,
     ) -> str:
         """Generate a useful answer from weather data without an LLM.
 
@@ -222,8 +216,6 @@ class AIService:
             return self._answer_humidity(current, where)
         if intent == intent_module.Intent.UV:
             return self._answer_uv(current, forecast, where)
-        if intent == intent_module.Intent.AIR_QUALITY:
-            return self._answer_aqi(aqi, where)
         if intent in (intent_module.Intent.FORECAST,):
             return self._answer_forecast(forecast, where, period)
         return self._answer_general(current, forecast, where, period)
@@ -355,34 +347,6 @@ class AIService:
         return (
             f"UV is very high {where} ({value:.0f}) — best to stay out of the midday "
             "sun and cover up."
-        )
-
-    def _answer_aqi(self, aqi: Optional[AQIResponse], where: str) -> str:
-        """Answer air quality questions."""
-        if aqi is None:
-            return FALLBACK_NO_DATA
-        c = aqi.current
-        aqi_val = c.aqi
-        category = c.epa_aqi or "Unknown"
-        if aqi_val is None:
-            return f"Air quality data isn't available {where} right now."
-        if aqi_val <= 50:
-            base = f"Air quality {where} is good right now (AQI {aqi_val}, {category}). "
-            return base + "It's fine for all outdoor activities."
-        if aqi_val <= 100:
-            base = f"Air quality {where} is moderate (AQI {aqi_val}, {category}). "
-            return base + "Generally fine for most people, though unusually sensitive individuals might notice mild effects."
-        if aqi_val <= 150:
-            base = f"Air quality {where} is unhealthy for sensitive groups (AQI {aqi_val}, {category}). "
-            return base + "Children, elderly, and people with respiratory conditions should limit prolonged outdoor exertion."
-        if aqi_val <= 200:
-            return (
-                f"Air quality {where} is unhealthy (AQI {aqi_val}, {category}). "
-                "Everyone should reduce prolonged outdoor activity. Wear a mask if you need to be outside."
-            )
-        return (
-            f"Air quality {where} is very unhealthy (AQI {aqi_val}, {category}). "
-            "Avoid all outdoor activity if possible and keep windows closed."
         )
 
     def _answer_forecast(self, forecast, where, period) -> str:
