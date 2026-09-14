@@ -53,10 +53,12 @@ class ApiService {
       throw ApiException('The request timed out. Please try again.');
     } on ApiException {
       rethrow; // Surface real backend errors instead of masking them.
+    } on FormatException {
+      // Backend returned non-JSON (for example an HTML error page).
+      throw ApiException('Could not reach the WeatherGPT server.');
     } catch (e) {
-      // Log the actual error for debugging
       debugPrint('API get error: $e');
-      throw ApiException('Could not reach the WeatherGPT server.\n\nDebug: $e');
+      throw ApiException('Could not reach the WeatherGPT server.');
     }
   }
 
@@ -70,10 +72,11 @@ class ApiService {
       throw ApiException('The request timed out. Please try again.');
     } on ApiException {
       rethrow; // Surface real backend errors instead of masking them.
+    } on FormatException {
+      throw ApiException('Could not reach the WeatherGPT server.');
     } catch (e) {
-      // Log the actual error for debugging
       debugPrint('API post error: $e');
-      throw ApiException('Could not reach the WeatherGPT server.\n\nDebug: $e');
+      throw ApiException('Could not reach the WeatherGPT server.');
     }
   }
 
@@ -87,10 +90,11 @@ class ApiService {
       throw ApiException('The request timed out. Please try again.');
     } on ApiException {
       rethrow; // Surface real backend errors instead of masking them.
+    } on FormatException {
+      throw ApiException('Could not reach the WeatherGPT server.');
     } catch (e) {
-      // Log the actual error for debugging
       debugPrint('API patch error: $e');
-      throw ApiException('Could not reach the WeatherGPT server.\n\nDebug: $e');
+      throw ApiException('Could not reach the WeatherGPT server.');
     }
   }
 
@@ -106,21 +110,36 @@ class ApiService {
       throw ApiException('The request timed out. Please try again.');
     } on ApiException {
       rethrow;
+    } on FormatException {
+      throw ApiException('Could not reach the WeatherGPT server.');
     } catch (e) {
-      // Log the actual error for debugging
       debugPrint('API delete error: $e');
-      throw ApiException('Could not reach the WeatherGPT server.\n\nDebug: $e');
+      throw ApiException('Could not reach the WeatherGPT server.');
     }
   }
 
   dynamic _handle(http.Response response) {
-    final body = response.body.isNotEmpty
-        ? jsonDecode(response.body) as Map<String, dynamic>
-        : <String, dynamic>{};
-    if (response.statusCode >= 400) {
-      throw ApiException(_extractMessage(response), response.statusCode);
+    if (response.body.isNotEmpty) {
+      // Backend error pages (for example Render/connectivity pages) can return
+      // HTML instead of JSON. Treat that as a network error instead of crashing
+      // on jsonDecode.
+      if (!response.body.trim().startsWith('{') &&
+          !response.body.trim().startsWith('[')) {
+        throw ApiException(
+          'Could not reach the WeatherGPT server.',
+          response.statusCode,
+        );
+      }
+      try {
+        return jsonDecode(response.body) as Map<String, dynamic>;
+      } on FormatException catch (e) {
+        throw ApiException(
+          'Could not reach the WeatherGPT server.\n\nDebug: $e',
+          response.statusCode,
+        );
+      }
     }
-    return body;
+    return <String, dynamic>{};
   }
 
   String _extractMessage(http.Response response) {
