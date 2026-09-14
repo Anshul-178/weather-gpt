@@ -6,6 +6,32 @@ import 'package:http/http.dart' as http;
 
 import '../config.dart';
 
+/// Transient status codes that are worth retrying.
+const _retryableStatusCodes = {408, 429, 500, 502, 503, 504};
+
+/// Lightweight retry helper for transient failures.
+Future<T> retry<T>(
+  Future<T> Function() fn, {
+  int maxAttempts = 3,
+  Duration baseDelay = const Duration(seconds: 2),
+}) async {
+  int attempt = 0;
+  while (true) {
+    try {
+      return await fn();
+    } on ApiException catch (e) {
+      attempt++;
+      if (attempt >= maxAttempts || e.statusCode != null &&
+          !_retryableStatusCodes.contains(e.statusCode)) {
+        rethrow;
+      }
+      final delay = baseDelay * (1 << (attempt - 1));
+      debugPrint('Retry $attempt/$maxAttempts after ${delay.inSeconds}s: $e');
+      await Future.delayed(delay);
+    }
+  }
+}
+
 /// Errors surfaced to the UI in a friendly form.
 class ApiException implements Exception {
   final String message;
@@ -44,78 +70,41 @@ class ApiService {
       Uri.parse('${AppConfig.apiBaseUrl}$path').replace(queryParameters: query);
 
   Future<dynamic> get(String path, [Map<String, String>? query]) async {
-    try {
+    return retry(() async {
       final response = await _client
           .get(_uri(path, query), headers: _headers)
           .timeout(AppConfig.requestTimeout);
       return _handle(response);
-    } on TimeoutException {
-      throw ApiException('The request timed out. Please try again.');
-    } on ApiException {
-      rethrow; // Surface real backend errors instead of masking them.
-    } on FormatException {
-      // Backend returned non-JSON (for example an HTML error page).
-      throw ApiException('Could not reach the WeatherGPT server.');
-    } catch (e) {
-      debugPrint('API get error: $e');
-      throw ApiException('Could not reach the WeatherGPT server.');
-    }
+    });
   }
 
   Future<dynamic> post(String path, Map<String, dynamic> body) async {
-    try {
+    return retry(() async {
       final response = await _client
           .post(_uri(path), headers: _headers, body: jsonEncode(body))
           .timeout(AppConfig.requestTimeout);
       return _handle(response);
-    } on TimeoutException {
-      throw ApiException('The request timed out. Please try again.');
-    } on ApiException {
-      rethrow; // Surface real backend errors instead of masking them.
-    } on FormatException {
-      throw ApiException('Could not reach the WeatherGPT server.');
-    } catch (e) {
-      debugPrint('API post error: $e');
-      throw ApiException('Could not reach the WeatherGPT server.');
-    }
+    });
   }
 
   Future<dynamic> patch(String path, Map<String, dynamic> body) async {
-    try {
+    return retry(() async {
       final response = await _client
           .patch(_uri(path), headers: _headers, body: jsonEncode(body))
           .timeout(AppConfig.requestTimeout);
       return _handle(response);
-    } on TimeoutException {
-      throw ApiException('The request timed out. Please try again.');
-    } on ApiException {
-      rethrow; // Surface real backend errors instead of masking them.
-    } on FormatException {
-      throw ApiException('Could not reach the WeatherGPT server.');
-    } catch (e) {
-      debugPrint('API patch error: $e');
-      throw ApiException('Could not reach the WeatherGPT server.');
-    }
+    });
   }
 
   Future<void> delete(String path) async {
-    try {
+    await retry(() async {
       final response = await _client
           .delete(_uri(path), headers: _headers)
           .timeout(AppConfig.requestTimeout);
       if (response.statusCode >= 400) {
         throw ApiException(_extractMessage(response), response.statusCode);
       }
-    } on TimeoutException {
-      throw ApiException('The request timed out. Please try again.');
-    } on ApiException {
-      rethrow;
-    } on FormatException {
-      throw ApiException('Could not reach the WeatherGPT server.');
-    } catch (e) {
-      debugPrint('API delete error: $e');
-      throw ApiException('Could not reach the WeatherGPT server.');
-    }
+    });
   }
 
   dynamic _handle(http.Response response) {
