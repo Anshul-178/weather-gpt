@@ -7,7 +7,12 @@ import 'package:http/http.dart' as http;
 import '../config.dart';
 
 /// Transient status codes that are worth retrying.
-const retryableStatusCodes = {408, 429, 500, 502, 503, 504};
+///
+/// 429 is deliberately excluded: the backend answers 429 with a Retry-After
+/// and its own cooldown, so retrying after a fixed 2s delay only hammers the
+/// provider again and keeps the rate-limit window alive. Surface the server's
+/// message instead and let the user refresh when they choose.
+const retryableStatusCodes = {408, 500, 502, 503, 504};
 
 /// Lightweight retry helper for transient failures.
 Future<T> retry<T>(

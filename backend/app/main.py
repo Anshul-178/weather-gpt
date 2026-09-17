@@ -67,6 +67,7 @@ async def request_context_middleware(request: Request, call_next):
             return JSONResponse(
                 status_code=exc.status_code,
                 content={"error": {"code": "RATE_LIMITED", "message": exc.detail}},
+                headers=exc.headers,
             )
 
     response = await call_next(request)
@@ -85,6 +86,7 @@ async def http_exception_handler(request: Request, exc: HTTPException):
     return JSONResponse(
         status_code=exc.status_code,
         content={"error": {"code": _code_for(exc.status_code), "message": str(exc.detail)}},
+        headers=exc.headers,
     )
 
 

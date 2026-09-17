@@ -42,6 +42,10 @@ logger = get_logger(__name__)
 
 router = APIRouter(prefix="/weather", tags=["insights"])
 
+# Max simultaneous provider fetches for multi-city overview. Keeps the burst
+# below provider rate limits (Open-Meteo free tier) on cache misses.
+_CITY_FETCH_CONCURRENCY = 3
+
 # Monitoring cities used when no explicit list is provided.
 DEFAULT_CITIES: list[dict[str, object]] = [
     {"name": "Delhi", "latitude": 28.6139, "longitude": 77.209},
@@ -211,32 +215,41 @@ async def _serve_stale_climate(
 
 
 async def _gather_cities(city_list: list[dict[str, object]]) -> list[CityWeatherSnapshot]:
-    """Fetch current weather for all cities concurrently."""
+    """Fetch current weather for all cities with bounded concurrency.
+
+    Firing 10+ provider requests simultaneously (the default city set) bursts
+    past Open-Meteo's free-tier rate limit and trips a 429 for the whole
+    deployment. A small semaphore keeps the burst width modest; cached cities
+    are not affected because cache hits never reach the provider.
+    """
+    semaphore = asyncio.Semaphore(_CITY_FETCH_CONCURRENCY)
+
     async def fetch_one(city: dict[str, object]) -> CityWeatherSnapshot:
         name = str(city["name"])
         lat = float(city["latitude"])  # type: ignore[arg-type]
         lon = float(city["longitude"])  # type: ignore[arg-type]
-        try:
-            current = await cached_weather_service.get_current(
-                lat, lon, GeoLocation(name=name, latitude=lat, longitude=lon)
-            )
-            snapshot = CityWeatherSnapshot(
-                name=name,
-                latitude=lat,
-                longitude=lon,
-                temperature=current.current.temperature,
-                feels_like=current.current.feels_like,
-                humidity=current.current.humidity,
-                wind_speed=current.current.wind_speed,
-                precipitation=current.current.precipitation,
-                condition=current.current.condition,
-                weather_code=current.current.weather_code,
-            )
-        except (WeatherProviderError, WeatherValidationError):
-            return CityWeatherSnapshot(
-                name=name, latitude=lat, longitude=lon, condition="unavailable"
-            )
-        return snapshot
+        async with semaphore:
+            try:
+                current = await cached_weather_service.get_current(
+                    lat, lon, GeoLocation(name=name, latitude=lat, longitude=lon)
+                )
+                snapshot = CityWeatherSnapshot(
+                    name=name,
+                    latitude=lat,
+                    longitude=lon,
+                    temperature=current.current.temperature,
+                    feels_like=current.current.feels_like,
+                    humidity=current.current.humidity,
+                    wind_speed=current.current.wind_speed,
+                    precipitation=current.current.precipitation,
+                    condition=current.current.condition,
+                    weather_code=current.current.weather_code,
+                )
+            except (WeatherProviderError, WeatherValidationError):
+                return CityWeatherSnapshot(
+                    name=name, latitude=lat, longitude=lon, condition="unavailable"
+                )
+            return snapshot
 
     return list(await asyncio.gather(*(fetch_one(city) for city in city_list)))
 

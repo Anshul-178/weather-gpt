@@ -227,6 +227,7 @@ async def test_weather_provider_maps_429_to_rate_limit_error(monkeypatch):
 
     class _Response:
         status_code = 429
+        headers = {}  # httpx responses always carry headers
 
         def raise_for_status(self):
             request = httpx.Request("GET", "https://api.open-meteo.com/v1/forecast")
@@ -252,8 +253,10 @@ async def test_weather_provider_maps_429_to_rate_limit_error(monkeypatch):
         HTTPError = httpx.HTTPError
 
     monkeypatch.setattr(weather_module, "httpx", _FakeHTTPX)
-    with pytest.raises(WeatherRateLimitError):
+    with pytest.raises(WeatherRateLimitError) as exc_info:
         await WeatherService()._request("https://api.open-meteo.com/v1/forecast", {})
+    assert exc_info.value.retry_after_seconds is None
+    assert exc_info.value.from_cooldown is False
 
 
 @pytest.mark.asyncio
@@ -390,3 +393,165 @@ async def test_geocode_success(client, monkeypatch):
     assert response.status_code == 200
     results = response.json()["results"]
     assert results and results[0]["name"] == "Kanpur"
+
+
+# ------------------------------------------------------------------ #
+# Provider 429 cooldown regression tests
+# ------------------------------------------------------------------ #
+
+
+@pytest.mark.asyncio
+async def test_cooldown_does_not_extend_under_traffic(monkeypatch):
+    """Requests DURING a cooldown must not extend it (self-extension bug)."""
+    import time as time_module
+
+    from app.services import cached_weather_service as cached_module
+
+    monkeypatch.setattr(cached_module, "_PROVIDER_RATE_LIMITED_UNTIL", 0.0)
+
+    calls = {"n": 0}
+
+    async def rate_limited(*args, **kwargs):
+        calls["n"] += 1
+        raise WeatherRateLimitError("provider rate limited")
+
+    monkeypatch.setattr(weather_module.weather_service, "get_current", rate_limited)
+
+    # First call hits the provider and starts the cooldown.
+    with pytest.raises(WeatherRateLimitError):
+        await cached_weather_service.get_current(26.4499, 80.3319)
+    assert calls["n"] == 1
+    first_until = cached_module._PROVIDER_RATE_LIMITED_UNTIL
+    assert first_until > time_module.monotonic()  # cooldown is active
+
+    # Steady traffic during the cooldown: provider is not consulted again
+    # and the deadline must stay put. (Old code restarted the 60s window on
+    # every request, so it never expired.)
+    for _ in range(5):
+        with pytest.raises(WeatherRateLimitError):
+            await cached_weather_service.get_current(26.4499, 80.3319)
+    assert calls["n"] == 1
+    assert cached_module._PROVIDER_RATE_LIMITED_UNTIL == first_until
+
+
+@pytest.mark.asyncio
+async def test_cooldown_recovers_and_retries_provider(monkeypatch):
+    """After the cooldown expires the provider is consulted again."""
+    import time as time_module
+
+    from app.services import cached_weather_service as cached_module
+
+    monkeypatch.setattr(cached_module, "_PROVIDER_RATE_LIMITED_UNTIL", 0.0)
+
+    calls = {"n": 0}
+
+    async def rate_limited(*args, **kwargs):
+        calls["n"] += 1
+        raise WeatherRateLimitError("provider rate limited")
+
+    monkeypatch.setattr(weather_module.weather_service, "get_current", rate_limited)
+
+    with pytest.raises(WeatherRateLimitError):
+        await cached_weather_service.get_current(26.4499, 80.3319)
+    assert calls["n"] == 1
+
+    # Force the cooldown into the past (expired).
+    monkeypatch.setattr(
+        cached_module, "_PROVIDER_RATE_LIMITED_UNTIL", time_module.monotonic() - 1
+    )
+    with pytest.raises(WeatherRateLimitError):
+        await cached_weather_service.get_current(26.4499, 80.3319)
+    assert calls["n"] == 2  # provider consulted again after expiry
+
+
+@pytest.mark.asyncio
+async def test_cooldown_honors_provider_retry_after(monkeypatch):
+    """Provider Retry-After extends the cooldown, capped at a sane maximum."""
+    import time as time_module
+
+    from app.services import cached_weather_service as cached_module
+
+    monkeypatch.setattr(cached_module, "_PROVIDER_RATE_LIMITED_UNTIL", 0.0)
+
+    async def rate_limited(*args, **kwargs):
+        raise WeatherRateLimitError("provider rate limited", retry_after_seconds=120)
+
+    monkeypatch.setattr(weather_module.weather_service, "get_current", rate_limited)
+    with pytest.raises(WeatherRateLimitError):
+        await cached_weather_service.get_current(26.4499, 80.3319)
+
+    remaining = cached_module._PROVIDER_RATE_LIMITED_UNTIL - time_module.monotonic()
+    # Default cooldown is 60s; provider asked 120s -> honored.
+    assert 115 <= remaining <= 125
+
+    # A pathological Retry-After is capped (_MAX_COOLDOWN_SECONDS = 300).
+    monkeypatch.setattr(cached_module, "_PROVIDER_RATE_LIMITED_UNTIL", 0.0)
+
+    async def rate_limited_huge(*args, **kwargs):
+        raise WeatherRateLimitError(
+            "provider rate limited", retry_after_seconds=100000
+        )
+
+    monkeypatch.setattr(
+        weather_module.weather_service, "get_current", rate_limited_huge
+    )
+    with pytest.raises(WeatherRateLimitError):
+        await cached_weather_service.get_current(26.4499, 80.3319)
+    remaining = cached_module._PROVIDER_RATE_LIMITED_UNTIL - time_module.monotonic()
+    assert remaining <= 301
+
+
+@pytest.mark.asyncio
+async def test_weather_service_parses_retry_after_header(monkeypatch):
+    """HTTP 429 with Retry-After exposes retry_after_seconds on the error."""
+
+    class _Response:
+        status_code = 429
+        headers = {"retry-after": "7"}
+
+        def raise_for_status(self):
+            request = httpx.Request("GET", "https://api.open-meteo.com/v1/forecast")
+            raise httpx.HTTPStatusError("rate limited", request=request, response=self)
+
+    class _Client:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc_info):
+            return False
+
+        async def get(self, *args, **kwargs):
+            return _Response()
+
+    class _FakeHTTPX:
+        AsyncClient = _Client
+        TimeoutException = httpx.TimeoutException
+        HTTPStatusError = httpx.HTTPStatusError
+        HTTPError = httpx.HTTPError
+
+    monkeypatch.setattr(weather_module, "httpx", _FakeHTTPX)
+    with pytest.raises(WeatherRateLimitError) as exc_info:
+        await WeatherService()._request("https://api.open-meteo.com/v1/forecast", {})
+    assert exc_info.value.retry_after_seconds == 7.0
+    assert exc_info.value.from_cooldown is False
+
+
+@pytest.mark.asyncio
+async def test_own_rate_limit_response_has_retry_after(client, monkeypatch):
+    """The backend's own 429 carries a Retry-After header."""
+    from app.config import settings
+    from app.utils import rate_limit as rl_module
+
+    rl_module._HITS.clear()
+
+    # Exhaust the per-IP window (60 req/min default).
+    for _ in range(settings.rate_limit_requests):
+        response = await client.get("/health")
+        assert response.status_code == 200
+
+    response = await client.get("/health")
+    assert response.status_code == 429
+    assert int(response.headers["retry-after"]) >= 1

@@ -29,6 +29,10 @@ logger = get_logger(__name__)
 _LAST_GOOD: dict[str, tuple[float, dict]] = {}
 _LAST_GOOD_TTL_SECONDS = 3600
 
+# Upper bound for a provider-requested cooldown so a pathological Retry-After
+# header cannot pin weather fetches for hours.
+_MAX_COOLDOWN_SECONDS = 300
+
 # Avoid a thundering herd when several clients request the same location after
 # its cache entry expires. A provider 429 is then one failed request, not one
 # failed request per waiting client.
@@ -55,8 +59,13 @@ class CachedWeatherService:
             try:
                 self._raise_if_provider_cooldown()
                 result = await weather_service.get_current(latitude, longitude, location)
-            except WeatherRateLimitError:
-                self._start_provider_cooldown()
+            except WeatherRateLimitError as exc:
+                # Only restart the cooldown on a *fresh* upstream 429. Raising
+                # from the cooldown itself is a re-check, not new evidence, and
+                # must not extend the window (otherwise a steady stream of
+                # requests would keep the cooldown alive forever).
+                if not exc.from_cooldown:
+                    self._start_provider_cooldown(exc.retry_after_seconds)
                 stale = self._recall_last_good(key)
                 if stale is not None and settings.serve_stale_on_provider_rate_limit:
                     logger.warning("Serving last-good CURRENT weather for %s", key)
@@ -95,8 +104,10 @@ class CachedWeatherService:
                 result = await weather_service.get_forecast(
                     latitude, longitude, days, location, model=model
                 )
-            except WeatherRateLimitError:
-                self._start_provider_cooldown()
+            except WeatherRateLimitError as exc:
+                # See get_current: never extend an active cooldown locally.
+                if not exc.from_cooldown:
+                    self._start_provider_cooldown(exc.retry_after_seconds)
                 stale = self._recall_last_good(key)
                 if stale is not None and settings.serve_stale_on_provider_rate_limit:
                     logger.warning("Serving last-good FORECAST weather for %s", key)
@@ -176,14 +187,33 @@ class CachedWeatherService:
         if _PROVIDER_RATE_LIMITED_UNTIL <= time.monotonic():
             return
         raise WeatherRateLimitError(
-            "The weather provider is temporarily rate-limited. Please try again shortly."
+            "The weather provider is temporarily rate-limited. Please try again shortly.",
+            from_cooldown=True,
         )
 
-    def _start_provider_cooldown(self) -> None:
-        """Start the cooldown after an upstream 429 response."""
+    def _start_provider_cooldown(self, retry_after_seconds: float | None = None) -> None:
+        """Start (or cap) the cooldown after a fresh upstream 429 response.
+
+        Honors the provider's Retry-After when the caller provides it. When a
+        cooldown is already running, this never extends it beyond what the
+        provider asked for — re-raising during cooldown must not push the
+        recovery time further out.
+        """
         global _PROVIDER_RATE_LIMITED_UNTIL
-        _PROVIDER_RATE_LIMITED_UNTIL = time.monotonic() + max(
-            1, int(settings.weather_rate_limit_cooldown_seconds)
+        requested = float(retry_after_seconds) if retry_after_seconds else None
+        duration = max(1, int(settings.weather_rate_limit_cooldown_seconds))
+        if requested is not None:
+            duration = max(duration, int(min(requested, _MAX_COOLDOWN_SECONDS)))
+        until = time.monotonic() + duration
+        # Never lengthen an active cooldown when re-entering from local
+        # re-checks; only a fresh upstream 429 reaches here with from_cooldown
+        # False, and even then an already-running window stands unless the
+        # provider explicitly asks to wait longer.
+        if _PROVIDER_RATE_LIMITED_UNTIL > time.monotonic() and requested is None:
+            return
+        _PROVIDER_RATE_LIMITED_UNTIL = max(
+            _PROVIDER_RATE_LIMITED_UNTIL if _PROVIDER_RATE_LIMITED_UNTIL > time.monotonic() else 0.0,
+            until,
         )
 
     async def _set_cached(self, key: str, value, settings_ttl: str) -> None:

@@ -67,6 +67,21 @@ class WeatherProviderError(Exception):
 class WeatherRateLimitError(WeatherProviderError):
     """The weather provider rejected the request because of rate limiting."""
 
+    def __init__(
+        self,
+        message: str = "The weather provider is temporarily rate-limited.",
+        retry_after_seconds: Optional[float] = None,
+        from_cooldown: bool = False,
+    ) -> None:
+        super().__init__(message)
+        # Honors the provider's Retry-After header when present (seconds), so
+        # the cache layer can wait exactly as long as the provider asks.
+        self.retry_after_seconds = retry_after_seconds
+        # True when raised locally because a cooldown was already active (as
+        # opposed to a fresh upstream 429). The cache layer must not restart
+        # the cooldown for these, or steady traffic would extend it forever.
+        self.from_cooldown = from_cooldown
+
 
 class WeatherValidationError(Exception):
     """Provider returned data that could not be normalized."""
@@ -93,6 +108,28 @@ def _parse_iso(value: Any) -> Optional[datetime]:
     try:
         return datetime.fromisoformat(value)
     except ValueError:
+        return None
+
+
+def _parse_retry_after(value: Any) -> Optional[float]:
+    """Parse a Retry-After header value (seconds or HTTP-date), or None."""
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        return max(0.0, float(text))
+    except ValueError:
+        pass
+    try:  # HTTP-date form, e.g. "Wed, 21 Oct 2026 07:28:00 GMT"
+        from email.utils import parsedate_to_datetime
+
+        retry_at = parsedate_to_datetime(text)
+        if retry_at.tzinfo is None:
+            retry_at = retry_at.replace(tzinfo=timezone.utc)
+        return max(0.0, (retry_at - datetime.now(timezone.utc)).total_seconds())
+    except Exception:  # noqa: BLE001 - header is advisory; ignore bad values
         return None
 
 
@@ -474,9 +511,20 @@ class WeatherService:
                 except httpx.HTTPStatusError as exc:
                     status_code = exc.response.status_code
                     if status_code == 429:
-                        logger.warning("Weather provider HTTP 429 (rate limited)")
+                        retry_after = _parse_retry_after(
+                            exc.response.headers.get("retry-after")
+                        )
+                        if retry_after is not None:
+                            logger.warning(
+                                "Weather provider HTTP 429 (rate limited; "
+                                "retry after %.0fs)",
+                                retry_after,
+                            )
+                        else:
+                            logger.warning("Weather provider HTTP 429 (rate limited)")
                         raise WeatherRateLimitError(
-                            "The weather provider is temporarily rate-limited."
+                            "The weather provider is temporarily rate-limited.",
+                            retry_after_seconds=retry_after,
                         ) from exc
                     if status_code >= 500 and attempt < max_attempts - 1:
                         logger.warning(

@@ -44,9 +44,15 @@ async def enforce_rate_limit(request: Request, *, chat: bool = False) -> None:
     while hits and hits[0] <= now - window:
         hits.popleft()
     if len(hits) >= max_requests:
-        logger.warning("Rate limit exceeded for %s", identity)
+        # Tell honest clients when they may retry (RFC 6585 §4), so they stop
+        # hammering and extending the window.
+        retry_after = max(1, int(window - (now - hits[0]))) if hits else window
+        logger.warning(
+            "Rate limit exceeded for %s (retry after %ss)", identity, retry_after
+        )
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Too many requests. Please slow down.",
+            headers={"Retry-After": str(retry_after)},
         )
     hits.append(now)
