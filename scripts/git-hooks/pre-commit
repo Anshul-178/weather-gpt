@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+# Pre-commit hook: blocks commits that look like they contain API keys or secrets.
+# Install:  bash scripts/git-hooks/install.sh
+# Bypass (sparingly, for false positives): git commit --no-verify
+
+set -o pipefail
+
+FILES=$(git diff --cached --name-only --diff-filter=ACM)
+if [ -z "$FILES" ]; then
+  exit 0
+fi
+
+# Known secret formats: Groq, OpenAI, Google/GCP, AWS, GitHub, private keys
+PATTERN='(gsk_[A-Za-z0-9]{20,}|sk-[A-Za-z0-9]{20,}|AIza[0-9A-Za-z_-]{35}|AQ\.[0-9A-Za-z_-]{30,}|AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{36,}|-----BEGIN [A-Z ]*PRIVATE KEY)'
+
+# Generic KEY=... / SECRET: ... assignments with a real-looking value
+GENERIC='^[A-Za-z0-9_]*(KEY|SECRET|TOKEN|PASSWORD)[A-Za-z0-9_]*["'"'"']?[[:space:]]*[=:][[:space:]]*["'"'"']?[A-Za-z0-9+/_=.-]{16,}'
+
+# Values that are obviously placeholders, not secrets
+ALLOWLIST='(your[_-]|placeholder|changeme|change_this|example|dummy|sample|xxx|\$\{|<[^>]*>)'
+
+violations=0
+
+for f in $FILES; do
+  # Skip binary files and deletions
+  if git diff --cached --numstat -- "$f" | awk '{exit ($1=="-") ? 0 : 1}'; then
+    continue
+  fi
+  [ -f "$f" ] || continue
+
+  match=$(grep -nIE "$PATTERN" -- "$f" | grep -viE "$ALLOWLIST")
+  gmatch=$(grep -nIE "$GENERIC" -- "$f" | grep -viE "$ALLOWLIST")
+
+  if [ -n "$match" ]; then
+    echo "pre-commit: possible secret in $f:"
+    echo "$match" | sed 's/^/    /'
+    violations=1
+  fi
+  if [ -n "$gmatch" ]; then
+    echo "pre-commit: hardcoded credential-like value in $f:"
+    echo "$gmatch" | sed 's/^/    /'
+    violations=1
+  fi
+done
+
+if [ "$violations" -ne 0 ]; then
+  echo ""
+  echo "Commit blocked. Remove the secret(s), or move them to a gitignored .env."
+  echo "False positive? Commit with: git commit --no-verify"
+  exit 1
+fi
+
+exit 0
