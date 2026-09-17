@@ -24,6 +24,8 @@ class ChatResponse(BaseModel):
     intent: Optional[str] = None
     sources: list[str] = []
     conversation_id: Optional[int] = None
+    language: Optional[str] = None   # detected language, e.g. "hi" (spec §18)
+    provider: Optional[str] = None   # LLM that answered, e.g. "gemini" (debug only)
     timestamp: datetime = Field(default_factory=datetime.now)
 
 

@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 
@@ -26,8 +27,15 @@ class VoiceService {
   bool _isListening = false;
   bool _isPlaying = false;
 
+  /// Guard against overlapping listen sessions (spec §15).
+  Completer<void>? _listenSession;
+
   bool get isListening => _isListening;
   bool get isPlaying => _isPlaying;
+
+  /// Detailed failure reason for the last startListening call, so the UI can
+  /// show the right message (permission vs unavailable vs generic).
+  VoiceFailure? lastFailure;
 
   /// Initialize AudioPlayer listeners
   Future<void> init() async {
@@ -60,7 +68,6 @@ class VoiceService {
     if (RegExp(r'[\u0D00-\u0D7F]').hasMatch(text)) return 'ml-IN';
     if (RegExp(r'[\u0A00-\u0A7F]').hasMatch(text)) return 'pa-IN';
     if (RegExp(r'[\u0A80-\u0AFF]').hasMatch(text)) return 'gu-IN';
-    if (RegExp(r'[\u0900-\u097F]').hasMatch(text)) return 'mr-IN';
     return 'en-IN';
   }
 
@@ -109,46 +116,93 @@ class VoiceService {
     } catch (_) {}
   }
 
-  /// Start listening for microphone input
+  /// Pre-flight microphone permission check.
+  ///
+  /// The speech_to_text plugin requests RECORD_AUDIO itself during
+  /// [stt.SpeechToText.initialize], but only when an Activity is available;
+  /// a permanent denial is reported as init failure. Probing first lets us
+  /// tell the user *why* voice input is unavailable (spec §15).
+  Future<bool> _ensureMicPermission() async {
+    try {
+      const channel = MethodChannel('weathergpt/voice');
+      final granted = await channel.invokeMethod('checkMicPermission');
+      return granted == true;
+    } on MissingPluginException {
+      // Non-Android platforms (e.g. Windows debug): fall back to the
+      // plugin's own permission probe.
+      try {
+        return await _speech.hasPermission;
+      } catch (_) {
+        return true; // let initialize() decide
+      }
+    } on PlatformException {
+      return true; // let initialize() decide
+    }
+  }
+
+  /// Start listening for microphone input.
+  ///
+  /// Returns true when a listening session actually started.
   Future<bool> startListening({
     required Function(String recognizedWords) onResult,
     required Function(bool isListening) onStatusChanged,
     String? preferredLocaleId,
     Function(String finalWords)? onFinalResult,
   }) async {
+    // Prevent multiple simultaneous listening sessions (spec §15).
+    if (_listenSession != null && !_listenSession!.isCompleted) {
+      debugPrint('startListening: session already active, ignoring');
+      return false;
+    }
+
+    lastFailure = null;
+
+    // 1. Microphone permission (spec §14).
+    final hasPermission = await _ensureMicPermission();
+    if (!hasPermission) {
+      lastFailure = VoiceFailure.permissionDenied;
+      debugPrint('startListening: RECORD_AUDIO permission denied');
+      return false;
+    }
+
     try {
-      if (!_speechInitialized) {
+      // 2. Initialize the recognizer (also requests permission on Android).
+      if (!_speechInitialized || !_speech.isAvailable) {
         _speechInitialized = await _speech.initialize(
+          debugLogging: kDebugMode,
           onStatus: (status) {
-            _isListening = status == 'listening';
-            onStatusChanged(_isListening);
+            debugPrint('STT status: $status');
+            final listening = status == 'listening' || status == 'started';
+            // 'done'/'notListening' close the session.
+            if (status == 'done' || status == 'notListening') {
+              _endSession(notify: onStatusChanged);
+            } else if (listening != _isListening) {
+              _isListening = listening;
+              onStatusChanged(listening);
+            }
           },
           onError: (error) {
-            debugPrint('STT error: $error');
-            _isListening = false;
-            onStatusChanged(false);
+            debugPrint('STT error: ${error.errorMsg} (permanent: ${error.permanent})');
+            _endSession(notify: onStatusChanged);
           },
         );
+        if (!_speechInitialized) {
+          lastFailure = VoiceFailure.unavailable;
+          return false;
+        }
       }
 
-      if (!_speechInitialized) {
-        return false;
-      }
-
+      // 3. Stop any TTS playback so the mic doesn't hear the app itself.
       await stopSpeaking();
 
-      String localeId = preferredLocaleId ?? 'en_IN';
-      try {
-        final locales = await _speech.locales();
-        final hasTarget = locales.any((l) => l.localeId.toLowerCase().replaceAll('-', '_') == localeId.toLowerCase());
-        if (!hasTarget) {
-          final fallback = locales.firstWhere(
-            (l) => l.localeId.toLowerCase().contains('in') || l.localeId.toLowerCase().contains('hi'),
-            orElse: () => locales.first,
-          );
-          localeId = fallback.localeId;
-        }
-      } catch (_) {}
+      // 4. Pick a supported recognition locale (spec §17): use the
+      // requested locale when the device supports it; otherwise fall back
+      // to an Indian/English locale. The recognizer does NOT detect the
+      // spoken language automatically — the locale selects it.
+      final localeId = await _resolveLocale(preferredLocaleId);
+
+      final completer = Completer<void>();
+      _listenSession = completer;
 
       _isListening = true;
       onStatusChanged(true);
@@ -158,15 +212,12 @@ class VoiceService {
           if (result.recognizedWords.isNotEmpty) {
             onResult(result.recognizedWords);
           }
-          // Call final result callback and auto-stop when speech is complete
           if (result.finalResult) {
-            if (onFinalResult != null && result.recognizedWords.isNotEmpty) {
-              onFinalResult(result.recognizedWords);
+            final words = result.recognizedWords.trim();
+            if (words.isNotEmpty && onFinalResult != null) {
+              onFinalResult(words);
             }
-            _speech.stop().then((_) {
-              _isListening = false;
-              onStatusChanged(false);
-            });
+            _endSession(notify: onStatusChanged);
           }
         },
         listenOptions: stt.SpeechListenOptions(
@@ -174,34 +225,95 @@ class VoiceService {
           listenMode: stt.ListenMode.dictation,
           cancelOnError: true,
           partialResults: true,
+          // Platform-safe limits: stop after 15s total, or 5s of silence.
+          listenFor: const Duration(seconds: 15),
+          pauseFor: const Duration(seconds: 5),
         ),
       );
 
-      // Also set a timeout to stop listening after 10 seconds of silence
-      // ignore: unawaited_futures
-      Future.delayed(const Duration(seconds: 10), () {
-        if (_isListening) {
-          _speech.stop().then((_) {
-            _isListening = false;
-            onStatusChanged(false);
-          });
+      // Safety net: platform may not honour listenFor on every device.
+      Timer(const Duration(seconds: 18), () {
+        if (_listenSession == completer && !completer.isCompleted) {
+          debugPrint('STT safety timeout elapsed, stopping session');
+          _endSession(notify: onStatusChanged);
         }
       });
 
       return true;
     } catch (e) {
       debugPrint('startListening error: $e');
-      _isListening = false;
-      onStatusChanged(false);
+      lastFailure = VoiceFailure.unavailable;
+      _endSession(notify: onStatusChanged);
       return false;
     }
   }
 
-  /// Stop listening
+  /// Stop listening and finalize the session.
   Future<void> stopListening() async {
+    await _endSession();
+  }
+
+  Future<void> _endSession({Function(bool)? notify}) async {
+    _isListening = false;
+    final session = _listenSession;
+    if (session != null && !session.isCompleted) {
+      session.complete();
+    }
+    _listenSession = null;
     try {
       await _speech.stop();
-      _isListening = false;
     } catch (_) {}
+    try {
+      notify?.call(false);
+    } catch (_) {}
+  }
+
+  /// Resolve a locale supported by the device recognizer (spec §17).
+  Future<String> _resolveLocale(String? preferred) async {
+    String normalized(String id) => id.toLowerCase().replaceAll('-', '_');
+    final wanted = normalized(preferred ?? 'en_IN');
+
+    try {
+      final locales = await _speech.locales();
+      if (locales.isEmpty) return wanted;
+
+      // Exact match first (e.g. 'hi_IN').
+      for (final l in locales) {
+        if (normalized(l.localeId) == wanted) return l.localeId;
+      }
+      // Same language, any region (e.g. 'hi-IN' when 'hi_IN' is missing).
+      final lang = wanted.split('_').first;
+      for (final l in locales) {
+        if (normalized(l.localeId).split('_').first == lang) return l.localeId;
+      }
+      // Any Indian locale → English (India) → device default.
+      for (final l in locales) {
+        final n = normalized(l.localeId);
+        if (n.endsWith('_in') || n.startsWith('en_in')) return l.localeId;
+      }
+      return locales.first.localeId;
+    } catch (e) {
+      debugPrint('locale lookup failed: $e');
+      return wanted;
+    }
+  }
+}
+
+/// Why the last voice-input attempt failed; drives the UI message (spec §15).
+enum VoiceFailure {
+  permissionDenied,
+  unavailable,
+}
+
+extension VoiceFailureMessage on VoiceFailure? {
+  String get userMessage {
+    switch (this) {
+      case VoiceFailure.permissionDenied:
+        return 'Microphone permission is required for voice input.';
+      case VoiceFailure.unavailable:
+        return 'Speech recognition is not available on this device.';
+      default:
+        return "Couldn't hear that. Please try again.";
+    }
   }
 }

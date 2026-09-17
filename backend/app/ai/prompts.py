@@ -5,6 +5,8 @@ the weather service data is the source of truth and the LLM never invents
 weather values.
 """
 
+from app.services.language_service import language_name
+
 from app.schemas.weather import CurrentWeatherResponse, ForecastResponse
 
 SYSTEM_PROMPT = """You are WeatherGPT — a friendly, weather-savvy companion.
@@ -41,6 +43,24 @@ Rules you must never break:
    user asks in Hindi (Devanagari or Romanized/Hinglish), answer in clean, natural
    Hindi or Hinglish accordingly. If the user asks in English, answer in English.
 """
+
+# Per-request language directive appended to the system prompt so every
+# provider (Gemini, Mistral, Groq) receives the same logical instruction
+# set (spec §8, §13).
+def build_language_instruction(detected_language: str) -> str:
+    """System instruction enforcing same-language responses."""
+    name = language_name(detected_language)
+    return (
+        f"LANGUAGE REQUIREMENT: The user's latest message was detected as "
+        f"{name} (language code '{detected_language}').\n"
+        f"Respond in {name} this turn.\n"
+        "Detect the language used by the user and respond in the same language "
+        "as their latest message. Do not switch to English unless the user "
+        "writes in English or explicitly asks for it. If the user mixes "
+        "languages, respond naturally using the dominant language of their "
+        "message while preserving commonly used technical and weather terms "
+        "where appropriate (e.g. 'UV index', '°C')."
+    )
 
 
 def build_weather_context(

@@ -158,3 +158,15 @@ app.include_router(ws_router)
 async def health() -> dict:
     """API health check."""
     return {"status": "ok"}
+
+
+@app.get("/llm/status", tags=["health"])
+async def llm_status() -> dict:
+    """Safe LLM provider health snapshot for debugging/admin.
+
+    Exposes only configured/state/cooldown info — never API keys or
+    provider account details (spec §6).
+    """
+    from app.services.llm_manager import llm_manager
+
+    return llm_manager.get_status()

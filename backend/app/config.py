@@ -40,10 +40,25 @@ class Settings(BaseSettings):
     geocoding_api_base_url: str = "https://geocoding-api.open-meteo.com/v1"
     weather_timeout_seconds: float = 10.0
 
-    # --- LLM provider (LangChain + Google Gemini Flash) ---
+    # --- LLM providers (multi-provider fallback) ---
+    # Keys live in .env only (see backend/.env.example). The order is
+    # configurable: LLM_PROVIDER_ORDER=gemini,mistral,groq
     gemini_api_key: Optional[str] = None
     gemini_model: str = "gemini-1.5-flash"
+    mistral_api_key: Optional[str] = None
+    mistral_model: str = "mistral-small-latest"
+    groq_api_key: Optional[str] = None
+    groq_model: str = "llama-3.3-70b-versatile"
+    llm_provider_order: str = "gemini,mistral,groq"
     llm_timeout_seconds: float = 30.0
+    llm_max_output_tokens: int = 600
+    # Circuit-breaker tuning (spec §3/§7). Retry-After overrides the
+    # rate-limit cooldown when the provider sends a sane value.
+    llm_rate_limit_cooldown_seconds: float = 60.0
+    llm_failure_cooldown_seconds: float = 120.0
+    llm_invalid_key_cooldown_seconds: float = 1800.0
+    llm_max_consecutive_failures: int = 3
+    llm_max_transient_retries: int = 2
     llm_max_history_messages: int = 8
 
     # --- Cache (Redis) ---

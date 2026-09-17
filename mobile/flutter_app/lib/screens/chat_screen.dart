@@ -14,12 +14,13 @@ class ChatScreen extends StatefulWidget {
   State<ChatScreen> createState() => _ChatScreenState();
 }
 
-class _ChatScreenState extends State<ChatScreen> {
+class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   final TextEditingController _controller = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final VoiceService _voiceService = VoiceService.instance;
 
   bool _isListening = false;
+  bool _isProcessingSpeech = false;
   String _selectedLocale = 'en_IN';
 
   // 9 Indian languages: code + display name + native greeting hint.
@@ -38,16 +39,31 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _voiceService.init();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _voiceService.stopListening();
     _voiceService.stopSpeaking();
     _controller.dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Release the mic when the app goes to background (spec §14).
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.hidden) {
+      if (_isListening) {
+        _voiceService.stopListening();
+        if (mounted) setState(() => _isListening = false);
+      }
+    }
   }
 
   void _send(ChatState chat) async {
@@ -72,49 +88,53 @@ class _ChatScreenState extends State<ChatScreen> {
 
   void _toggleListening(ChatState chat) async {
     if (_isListening) {
+      _isSendingFromSpeech = false;
       await _voiceService.stopListening();
-      setState(() => _isListening = false);
+      if (mounted) setState(() => _isListening = false);
       // Send when user manually stops recording
       if (_controller.text.trim().isNotEmpty && !_isSendingFromSpeech) {
         _send(chat);
       }
       _isSendingFromSpeech = false;
-    } else {
-      _isSendingFromSpeech = false;
-      final success = await _voiceService.startListening(
-        preferredLocaleId: null,
-        onStatusChanged: (listening) {
-          if (mounted) setState(() => _isListening = listening);
-        },
-        onResult: (words) {
-          if (mounted) {
-            setState(() {
-              _controller.text = words;
-              _controller.selection = TextSelection.fromPosition(
-                TextPosition(offset: _controller.text.length),
-              );
-            });
-          }
-        },
-        onFinalResult: (finalWords) {
-          // Auto-send when speech recognition detects the user stopped speaking
-          if (mounted &&
-              finalWords.trim().isNotEmpty &&
-              !_isSendingFromSpeech) {
-            _isSendingFromSpeech = true;
-            _send(chat);
-          }
-        },
-      );
+      return;
+    }
 
-      if (!success && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-                'Microphone permission or speech recognition unavailable.'),
-          ),
-        );
-      }
+    // Avoid stacking a new listening session while speech is processing.
+    if (_isProcessingSpeech) return;
+
+    _isSendingFromSpeech = false;
+    setState(() => _isProcessingSpeech = true);
+    final success = await _voiceService.startListening(
+      preferredLocaleId: _selectedLocale,
+      onStatusChanged: (listening) {
+        if (mounted) setState(() => _isListening = listening);
+      },
+      onResult: (words) {
+        if (mounted) {
+          setState(() {
+            _controller.text = words;
+            _controller.selection = TextSelection.fromPosition(
+              TextPosition(offset: _controller.text.length),
+            );
+          });
+        }
+      },
+      onFinalResult: (finalWords) {
+        // Auto-send when speech recognition detects the user stopped speaking
+        if (mounted &&
+            finalWords.trim().isNotEmpty &&
+            !_isSendingFromSpeech) {
+          _isSendingFromSpeech = true;
+          _send(chat);
+        }
+      },
+    );
+    if (mounted) setState(() => _isProcessingSpeech = false);
+
+    if (!success && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(_voiceService.lastFailure.userMessage)),
+      );
     }
   }
 
@@ -320,7 +340,7 @@ class _ChatScreenState extends State<ChatScreen> {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  // Microphone button
+                  // Microphone button — Idle → Listening → Processing (spec §15)
                   AnimatedContainer(
                     duration: const Duration(milliseconds: 200),
                     margin: const EdgeInsets.only(right: 8),
@@ -331,13 +351,32 @@ class _ChatScreenState extends State<ChatScreen> {
                       shape: BoxShape.circle,
                     ),
                     child: IconButton(
-                      tooltip:
-                          _isListening ? 'Stop Recording' : 'Speak via Mic',
-                      icon: Icon(
-                        _isListening ? Icons.mic : Icons.mic_none_rounded,
-                        color: _isListening ? Colors.white : scheme.primary,
-                      ),
-                      onPressed: () => _toggleListening(chat),
+                      tooltip: _isListening
+                          ? 'Stop Recording'
+                          : (_isProcessingSpeech
+                              ? 'Starting microphone…'
+                              : 'Speak via Mic'),
+                      icon: _isProcessingSpeech && !_isListening
+                          ? SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: scheme.primary,
+                              ),
+                            )
+                          : Icon(
+                              _isListening
+                                  ? Icons.mic
+                                  : Icons.mic_none_rounded,
+                              color: _isListening
+                                  ? Colors.white
+                                  : scheme.primary,
+                            ),
+                      onPressed:
+                          (_isProcessingSpeech && !_isListening)
+                              ? null
+                              : () => _toggleListening(chat),
                     ),
                   ),
                   Expanded(

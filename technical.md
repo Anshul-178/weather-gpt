@@ -1126,6 +1126,41 @@ LLM → Guess current temperature
 
 The backend should inject structured weather data into the AI request.
 
+## Multi-LLM Fallback (implemented)
+
+The backend uses a provider-abstraction layer with automatic fallback:
+
+```text
+LLMManager (orchestrator)
+ ├── GeminiProvider   (LangChain ChatGoogleGenerativeAI)
+ ├── MistralProvider  (REST, OpenAI-compatible)
+ └── GroqProvider     (REST, OpenAI-compatible)
+```
+
+Key properties:
+
+- Provider order is configurable: `LLM_PROVIDER_ORDER=gemini,mistral,groq`.
+- Failures are classified (rate limit / server / timeout / connection / auth /
+  bad response / invalid request) and drive the fallback decision.
+- HTTP 429, quota exhaustion, 5xx, timeouts and connection errors → immediate
+  fallback to the next provider; transient errors get a short exponential
+  backoff retry first; invalid requests abort without burning other providers.
+- A per-provider circuit breaker marks a provider RATE_LIMITED / QUOTA_EXHAUSTED /
+  TEMPORARILY_UNAVAILABLE / INVALID_KEY with a configurable cooldown, then
+  restores eligibility automatically when the cooldown expires.
+- `Retry-After` headers are respected when the provider sends them.
+- All providers receive the same logical prompt (system instructions + weather
+  context + per-request language directive).
+- Responses include `provider` (debug/analytics) and `language` (detected).
+- `GET /llm/status` exposes a safe health snapshot (states and cooldowns only,
+  never API keys).
+- If every provider fails, `/chat` falls back to the deterministic rule-based
+  answer built from live weather data — the user always gets a useful reply.
+
+Performance contract: 1 user message → 1 LLM request normally; an additional
+request only when fallback is required. Language detection never makes an
+LLM call (script + stopword analysis runs locally).
+
 ---
 
 # 37. Observability

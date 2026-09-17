@@ -1,31 +1,34 @@
 """AI service.
 
-Receives the user question plus structured weather context, constructs the
-prompt, calls the LLM (OpenAI-compatible chat completions API), validates
-the response, and returns a clean answer.
+Receives the user question plus structured weather context, detects the
+question language locally, constructs the prompt, calls the LLM manager
+(Gemini → Mistral → Groq with automatic fallback), validates the response,
+and returns a clean answer.
 
 The LLM provider implementation is isolated here — routes never call the
-LLM directly. When no LLM key is configured, or the LLM fails, a
+LLM directly. When no LLM key is configured, or every provider fails, a
 deterministic rule-based fallback generates a useful answer from the same
 weather data (never inventing values).
 """
 
-import time  # noqa: F401  (used for latency logging in future)
+import time
 from typing import Optional
 
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_core.messages import AIMessage, HumanMessage  # noqa: F401  (re-exported history format)
 
 from app.ai import intents as intent_module
 from app.ai.prompts import (
     SYSTEM_PROMPT,
     build_activity_context,
+    build_language_instruction,
     build_user_prompt,
     build_weather_context,
 )
 from app.ai.retriever import maybe_retrieve
 from app.config import settings
 from app.schemas.weather import CurrentWeatherResponse, ForecastResponse
+from app.services.llm_manager import LLMError, llm_manager
+from app.services.language_service import detect_language
 from app.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -73,21 +76,34 @@ class AIService:
 
         history = self._bounded_history(conversation_history)
 
-        if settings.gemini_api_key:
+        # Local language detection — no extra LLM call (spec §12/§26).
+        detected_language = detect_language(question)
+
+        # The orchestrator skips unconfigured providers and falls back
+        # automatically; the rule-based answer remains the final net.
+        if llm_manager.has_available_provider():
             try:
-                answer = await self._call_llm(
-                    question, weather_context, activity_context, rag_context, history
+                answer, provider_name = await self._call_llm(
+                    question, weather_context, activity_context, rag_context,
+                    history, detected_language,
                 )
-                return self._validate_answer(answer, weather_context, sources=["weather_api", "llm"])
+                return self._validate_answer(
+                    answer, weather_context,
+                    sources=["weather_api", "llm"], provider=provider_name,
+                    language=detected_language,
+                )
             except LLMError as exc:
-                logger.warning("LLM failed, using rule-based fallback: %s", exc)
+                logger.warning("All LLM providers failed, using rule-based fallback: %s", exc)
             except Exception as exc:  # noqa: BLE001
                 logger.warning("Unexpected LLM error, using fallback: %s", exc)
 
         answer = self._rule_based_answer(
             question, current, forecast, activity_result, location_name
         )
-        return self._validate_answer(answer, weather_context, sources=["weather_api", "rules"])
+        return self._validate_answer(
+            answer, weather_context, sources=["weather_api", "rules"],
+            language=detected_language,
+        )
 
     # ------------------------------------------------------------------ #
     # LLM call
@@ -100,37 +116,35 @@ class AIService:
         activity_context: Optional[str],
         rag_context: Optional[str],
         history: list[dict],
-    ) -> str:
-        """Call Google Gemini Flash via LangChain."""
-        llm = ChatGoogleGenerativeAI(
-            model=settings.gemini_model,
-            google_api_key=settings.gemini_api_key,
-            temperature=0.7,
-            max_output_tokens=600,
-        )
+        detected_language: str = "en",
+    ) -> tuple[str, str]:
+        """Call the LLM manager (Gemini → Mistral → Groq with fallback).
 
-        # Build the message list for LangChain.
-        messages = [SystemMessage(content=SYSTEM_PROMPT)]
-        for msg in history:
-            if msg["role"] == "user":
-                messages.append(HumanMessage(content=msg["content"]))
-            else:
-                messages.append(AIMessage(content=msg["content"]))
+        Returns ``(answer, provider_name)`` so responses can be attributed
+        for debugging/analytics without exposing keys (spec §18).
+        """
+        messages = [
+            {"role": msg["role"], "content": msg["content"]}
+            for msg in self._bounded_history(history)
+        ]
 
         user_prompt = build_user_prompt(
             question, weather_context, activity_context, rag_context
         )
-        messages.append(HumanMessage(content=user_prompt))
+        messages.append({"role": "user", "content": user_prompt})
 
-        try:
-            response = await llm.ainvoke(messages)
-        except Exception as exc:
-            raise LLMError(f"Gemini call failed: {exc}") from exc
+        # Same logical prompt for every provider (spec §8): shared system
+        # instructions + per-request language directive.
+        system_prompt = "\n\n".join(
+            [SYSTEM_PROMPT, build_language_instruction(detected_language)]
+        )
 
-        answer = self._extract_text(response.content)
-        if not answer or not answer.strip():
-            raise LLMError("Gemini returned empty answer")
-        return answer.strip()
+        started = time.perf_counter()
+        answer, provider_name = await llm_manager.generate(
+            system_prompt, messages, temperature=0.7
+        )
+        _ = (time.perf_counter() - started)  # latency logged inside manager
+        return answer, provider_name
 
     @staticmethod
     def _extract_text(content: object) -> str:
@@ -167,14 +181,22 @@ class AIService:
         ]
         return cleaned[-settings.llm_max_history_messages:]
 
-    def _validate_answer(self, answer: str, weather_context: str, sources: list[str]) -> dict:
+    def _validate_answer(
+        self, answer: str, weather_context: str, sources: list[str],
+        provider: Optional[str] = None, language: Optional[str] = None,
+    ) -> dict:
         """Basic response validation before returning to the client."""
         cleaned = answer.strip()
         if not cleaned:
             cleaned = FALLBACK_NO_DATA
         # Guardrail: if the LLM confessed to guessing numbers, prefer fallback.
         _ = weather_context  # context kept for future rule extensions
-        return {"answer": cleaned, "sources": sources}
+        result = {"answer": cleaned, "sources": sources}
+        if provider:
+            result["provider"] = provider
+        if language:
+            result["language"] = language
+        return result
 
     # ------------------------------------------------------------------ #
     # Deterministic fallback (no LLM key or LLM failure)

@@ -101,6 +101,8 @@ async def chat(
         intent=intent.value,
         sources=result["sources"],
         conversation_id=conversation.id if conversation else None,
+        language=result.get("language"),
+        provider=result.get("provider"),
     )
 
 
