@@ -11,14 +11,22 @@ dist/
 build/
 coverage.xml
 .coverage
+.coverage.*
+htmlcov/
 *.db
 *.sqlite
 *.sqlite3
 chroma_db/
 
-# Environment
+# Environment / secrets
 .env
-backend/.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.jks
+key.properties
 
 # Flutter / Dart
 mobile/flutter_app/.dart_tool/
@@ -27,20 +35,23 @@ mobile/flutter_app/.idea/
 mobile/flutter_app/build/
 mobile/flutter_app/.metadata
 mobile/flutter_app/flutter_*.log
+mobile/flutter_app/build_log.txt
 mobile/flutter_app/coverage/
 mobile/flutter_app/.packages
 mobile/flutter_app/pubspec_overrides.yaml
+mobile/flutter_app/windows/flutter/ephemeral/
+
+# Android
+**/local.properties
+.gradle/
+android/app/.cxx/
 
 # OS / IDE
 .DS_Store
 Thumbs.db
 .idea/
 .vscode/
-
-# Secrets and local configuration
-*.pem
-*.key
-*.p12
-*.jks
-local.properties
-**/local.properties
+*.iml
+*.ipr
+*.iws
+*.swp
