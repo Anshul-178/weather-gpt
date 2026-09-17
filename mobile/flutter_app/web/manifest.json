@@ -1,6 +1,6 @@
 {
-    "name": "weathergpt",
-    "short_name": "weathergpt",
+    "name": "weather_GPT",
+    "short_name": "weather_GPT",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

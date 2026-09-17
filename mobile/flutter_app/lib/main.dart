@@ -32,7 +32,7 @@ class WeatherGPTApp extends StatelessWidget {
           return ChangeNotifierProvider(
             create: (_) => ChatState(appState),
             child: MaterialApp(
-              title: 'WeatherGPT',
+              title: 'weather_GPT',
               theme: _theme(Brightness.light),
               darkTheme: _theme(Brightness.dark),
               themeMode: ThemeMode.system,
@@ -252,7 +252,7 @@ class _ShellState extends State<_Shell> {
             const Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('WeatherGPT'),
+                Text('weather_GPT'),
                 Text('Your weather, made simple',
                     style:
                         TextStyle(fontSize: 11, fontWeight: FontWeight.w500)),
