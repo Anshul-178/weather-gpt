@@ -1,7 +1,7 @@
 """Simple in-memory rate limiting (technical.md §34).
 
 Per-process sliding window limiter. Adequate for a single instance; use a
-Redis-based limiter for multi-instance deployments.
+shared store (e.g. a database table) for multi-instance deployments.
 """
 
 import time

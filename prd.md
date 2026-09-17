@@ -876,7 +876,7 @@ The MVP is considered complete when:
 | AI | LLM API |
 | Weather | Weather API |
 | Database | PostgreSQL |
-| Cache | Redis |
+| Cache | In-memory (process-local TTL cache) |
 | Authentication | JWT / secure sessions |
 | Notifications | Firebase Cloud Messaging |
 | Deployment | Cloud/VPS platform |

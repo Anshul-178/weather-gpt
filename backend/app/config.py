@@ -61,8 +61,7 @@ class Settings(BaseSettings):
     llm_max_transient_retries: int = 2
     llm_max_history_messages: int = 8
 
-    # --- Cache (Redis) ---
-    redis_url: str = "redis://localhost:6379/0"
+    # --- Cache (in-memory) ---
     cache_current_ttl_seconds: int = 600  # 5-15 min per technical.md
     cache_forecast_ttl_seconds: int = 1800  # 30-60 min
     cache_geocode_ttl_seconds: int = 21600  # several hours

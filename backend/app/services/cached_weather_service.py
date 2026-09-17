@@ -35,12 +35,12 @@ _LAST_GOOD_TTL_SECONDS = 3600
 _IN_FLIGHT_LOCKS: dict[str, asyncio.Lock] = {}
 
 # Do not immediately retry the provider after it has explicitly rate-limited
-# us. This is process-local; Redis still provides the normal shared cache.
+# us. This is process-local, like the in-memory cache.
 _PROVIDER_RATE_LIMITED_UNTIL = 0.0
 
 
 class CachedWeatherService:
-    """Weather retrieval with Redis/in-memory caching."""
+    """Weather retrieval with in-memory caching."""
 
     async def get_current(
         self, latitude: float, longitude: float, location: GeoLocation | None = None

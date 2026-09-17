@@ -13,7 +13,7 @@
 Flutter app ──HTTPS──► FastAPI backend ──► Weather provider (Open-Meteo)
                                   ├──► LLM provider (OpenAI-compatible / rule fallback)
                                   ├──► PostgreSQL (SQLAlchemy, users/locations/alerts/chat)
-                                  └──► Redis cache (optional at runtime)
+                                  └──► In-memory cache (weather, geocoding)
 ```
 
 Key rule (from prompt §9, technical.md §36): the weather provider is the **source of truth**; the LLM only interprets structured weather context and must never invent weather values.
@@ -26,7 +26,7 @@ Key rule (from prompt §9, technical.md §36): the weather provider is the **sou
 
 1. Config (`pydantic-settings`), logging, utils (units, validation, geo)
 2. Pydantic schemas (weather, chat, activity, alerts, locations, auth)
-3. Cache service (Redis with graceful in-memory fallback)
+3. Cache service (in-memory TTL cache)
 4. Weather service: current, forecast, geocoding → `/weather/*` routes
 5. AI module: `prompts.py`, `intents.py`, `retriever.py`, `ai_service.py`
 6. `/chat` route with bounded conversation context and follow-up resolution
@@ -72,25 +72,25 @@ Deterministic rule engine with configurable thresholds (rain, heavy rain, thunde
 
 ## 10. Deployment Strategy
 
-- Backend: `Dockerfile` (slim Python image, uvicorn), `docker-compose.yml` for FastAPI + PostgreSQL + Redis
+- Backend: `Dockerfile` (slim Python image, uvicorn), `docker-compose.yml` for FastAPI + PostgreSQL
 - Production: Nginx TLS proxy in front of uvicorn (documented in README)
 - Flutter: standard release build with `--dart-define` pointing at the HTTPS API
 
 ## 11. Dependencies
 
-Backend: fastapi, uvicorn, pydantic, pydantic-settings, httpx, SQLAlchemy (async), aiosqlite, asyncpg, redis, pyjwt, passlib[bcrypt], chromadb (optional), pytest, pytest-asyncio.
+Backend: fastapi, uvicorn, pydantic, pydantic-settings, httpx, SQLAlchemy (async), aiosqlite, asyncpg, pyjwt, passlib[bcrypt], chromadb (optional), pytest, pytest-asyncio.
 Flutter: http, provider, shared_preferences, intl.
 
 ## 12. Environment Variables
 
-`WEATHER_API_KEY`, `WEATHER_API_BASE_URL`, `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL`, `DATABASE_URL`, `REDIS_URL`, `JWT_SECRET`, `FIREBASE_PROJECT_ID` — all with placeholders in `.env.example`, real values never committed.
+`WEATHER_API_KEY`, `WEATHER_API_BASE_URL`, `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL`, `DATABASE_URL`, `JWT_SECRET`, `FIREBASE_PROJECT_ID` — all with placeholders in `.env.example`, real values never committed.
 
 ## 13. Potential Risks
 
 - No LLM key available → rule-based fallback answers keep the product usable (clearly labeled)
-- Redis/Postgres unavailable locally → cache falls back to in-memory; SQLite default DB
+- Postgres unavailable locally → SQLite default DB
 - Open-Meteo outage → clean 503 responses, never fabricated data
-- Rate limiting per-process (in-memory) → document Redis-based limiting for multi-instance deploys
+- Rate limiting per-process (in-memory) → document shared-store limiting for multi-instance deploys
 
 ## 14. Milestones
 

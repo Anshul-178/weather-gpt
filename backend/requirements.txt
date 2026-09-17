@@ -25,7 +25,7 @@ aiosqlite==0.22.1                  # async SQLite driver (local dev default)
 asyncpg==0.31.0                    # async PostgreSQL driver (production)
 
 # --- Cache ---
-redis==8.1.0                       # async Redis client (in-memory fallback built in)
+# In-memory TTL cache is built into app/services/cache_service.py (no extra deps)
 
 # --- Authentication ---
 PyJWT==2.13.0                      # JWT access tokens

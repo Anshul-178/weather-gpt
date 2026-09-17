@@ -12,7 +12,7 @@ WeatherGPT is an AI-powered weather assistant consisting of:
 - LLM/AI service
 - Optional RAG/retrieval layer
 - PostgreSQL database
-- Redis cache
+- In-memory cache (process-local TTL cache)
 - Firebase Cloud Messaging for notifications
 
 ---
@@ -40,10 +40,10 @@ WeatherGPT is an AI-powered weather assistant consisting of:
               │                │                 │
               └────────────────┼─────────────────┘
                                ▼
-                         ┌───────────┐
-                         │   Redis   │
-                         │   Cache   │
-                         └───────────┘
+                         ┌───────────────┐
+                         │  In-Memory    │
+                         │    Cache      │
+                         └───────────────┘
 
                     ┌─────────────────────┐
                     │ Firebase Cloud      │
@@ -63,7 +63,7 @@ WeatherGPT is an AI-powered weather assistant consisting of:
 | HTTP client | httpx |
 | Database | PostgreSQL |
 | ORM | SQLAlchemy |
-| Cache | Redis |
+| Cache | In-memory TTL cache (process-local) |
 | AI | LLM API |
 | Embeddings | BGE / compatible embedding model |
 | Vector DB | Chroma initially |
@@ -191,8 +191,6 @@ LLM_API_KEY=your_llm_api_key
 
 DATABASE_URL=postgresql+asyncpg://user:password@localhost:5432/weathergpt
 
-REDIS_URL=redis://localhost:6379
-
 JWT_SECRET=change_this_in_production
 
 FIREBASE_PROJECT_ID=your_project
@@ -217,7 +215,7 @@ FastAPI
   ↓
 Validate latitude/longitude
   ↓
-Check Redis cache
+Check in-memory cache
   ↓
 If cache miss → Weather API
   ↓
@@ -685,7 +683,7 @@ created_at
 
 # 21. Caching
 
-Redis should cache weather data.
+The in-memory cache should store weather data.
 
 Suggested strategy:
 
@@ -939,7 +937,6 @@ Test:
 Flutter → FastAPI
 FastAPI → Weather API
 FastAPI → Database
-FastAPI → Redis
 FastAPI → LLM
 ```
 
@@ -971,7 +968,6 @@ Development services:
 ```text
 FastAPI
 PostgreSQL
-Redis
 ```
 
 can be managed using Docker Compose.
@@ -991,7 +987,7 @@ Production:
                        v
                  FastAPI Server
                   /                            /                             v               v
-          PostgreSQL          Redis
+          PostgreSQL
                 |
                 v
          Persistent Storage
@@ -1051,7 +1047,6 @@ Each environment should have separate:
 
 - Database
 - API credentials
-- Redis
 - JWT secrets
 - Firebase configuration where appropriate
 
@@ -1273,7 +1268,7 @@ The technical MVP is complete when:
 - [ ] AI does not invent weather values.
 - [ ] Flutter communicates with FastAPI over HTTPS.
 - [ ] PostgreSQL stores required user data.
-- [ ] Redis caching works.
+- [ ] In-memory caching works.
 - [ ] Basic weather alerts work.
 - [ ] API secrets are server-side.
 - [ ] Error handling is implemented.

@@ -41,7 +41,7 @@ alerts. The weather provider is always the source of truth — the AI never inve
 Flutter app ──HTTPS/WS──► FastAPI backend ──► Weather provider (Open-Meteo + Archive)
                                 ├──► LLM (OpenAI-compatible, optional)
                                 ├──► PostgreSQL (users, locations, alerts, chat, devices)
-                                ├──► Redis cache (in-memory fallback)
+                                ├──► In-memory cache (weather, geocoding)
                                 └──► Firebase Cloud Messaging (push alerts)
 ```
 
@@ -70,7 +70,7 @@ weathergpt/
 │   └── Dockerfile
 ├── mobile/flutter_app/           # Flutter client
 │   └── lib/                      # screens / providers / repositories / services / models
-├── docker-compose.yml            # api + postgres + redis
+├── docker-compose.yml            # api + postgres
 ├── prd.md  ·  technical.md  ·  IMPLEMENTATION_PLAN.md
 └── README.md
 ```
@@ -79,7 +79,7 @@ weathergpt/
 
 - Python 3.11+ (tested on 3.13)
 - Flutter SDK 3.22+ (Android toolchain for emulators)
-- Docker (optional, for PostgreSQL + Redis)
+- Docker (optional, for PostgreSQL)
 - No weather/LLM API keys required to start: the default weather provider is
   [Open-Meteo](https://open-meteo.com) (free, no key) and the AI works without an LLM key using a
   deterministic rule-based responder. Add an `LLM_API_KEY` for richer natural-language answers.
@@ -104,7 +104,7 @@ Debug Flutter builds now use this local API automatically on web/desktop. For
 Android emulators, use `http://10.0.2.2:8000`; a release build continues to use
 the deployed backend unless `API_BASE_URL` is provided.
 
-By default the backend uses SQLite (`./weathergpt.db`) and an in-memory cache — no PostgreSQL/Redis
+By default the backend uses SQLite (`./weathergpt.db`) and an in-memory cache — no PostgreSQL
 needed for local development.
 
 ## Weather provider endpoints
@@ -139,7 +139,6 @@ See `backend/.env.example` (placeholders only — never commit a real `.env`):
 | `GEOCODING_API_BASE_URL` | Open-Meteo Geocoding API base URL |
 | `LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL` | Any OpenAI-compatible LLM (optional) |
 | `DATABASE_URL` | `postgresql+asyncpg://…` in production; SQLite default in dev |
-| `REDIS_URL` | Redis cache; falls back to in-memory if unreachable |
 | `JWT_SECRET` | Token signing secret (change in production!) |
 | `ALERT_SCHEDULER_ENABLED` | Enable background alert checker |
 | `FIREBASE_SERVICE_ACCOUNT_JSON` | FCM service-account JSON (inline or file path); without it pushes run in dry-run mode |
@@ -217,7 +216,7 @@ cp backend/.env.example backend/.env
 docker compose up --build
 ```
 
-Brings up FastAPI (port 8000) + PostgreSQL + Redis with the right environment wiring.
+Brings up FastAPI (port 8000) + PostgreSQL with the right environment wiring.
 
 ## Kubernetes
 
@@ -225,7 +224,7 @@ Brings up FastAPI (port 8000) + PostgreSQL + Redis with the right environment wi
 kubectl apply -f k8s/weathergpt.yaml
 ```
 
-Namespace-scoped stack: API (2–8 replicas, HPA) + PostgreSQL (PVC) + Redis + Ingress with
+Namespace-scoped stack: API (2–8 replicas, HPA) + PostgreSQL (PVC) + Ingress with
 WebSocket-friendly timeouts.
 
 ## Security
@@ -239,8 +238,9 @@ WebSocket-friendly timeouts.
 ## Deployment notes
 
 - Production: Nginx (HTTPS/TLS) → uvicorn; separate `development` / `staging` / `production`
-  environments with distinct databases, secrets, and Redis instances
-- Scale-out: replace the in-memory rate limiter/cache with Redis-backed implementations
+  environments with distinct databases and secrets
+- Scale-out: the in-memory cache/rate limiter is per-process; add a shared store if you
+  run multiple instances
 - CI suggestion: `pytest` + `ruff` + `flutter analyze` on every push, then build the Docker image
 
 ## Documentation
