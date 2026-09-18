@@ -397,25 +397,36 @@ async def test_tts_empty_text_returns_empty():
 
 
 # ------------------------------------------------------------------ #
-# NWP model selection
+# Forecast model listing (OpenWeather serves its own global model)
 # ------------------------------------------------------------------ #
 
 
 @pytest.mark.asyncio
-async def test_forecast_model_param_forwarded(monkeypatch):
-    """The model param is passed through to the provider request."""
+async def test_forecast_days_clamped_to_openweather_window(monkeypatch):
+    """OpenWeather serves 5 days; larger requests are clamped, not rejected."""
     from app.services.weather_service import WeatherService
 
-    captured = {}
+    # Six days of 3-hourly entries — one more than OpenWeather provides.
+    entries = [
+        {
+            "dt_txt": f"2026-09-{10 + day} 12:00:00",
+            "main": {"temp": 30.0, "feels_like": 32.0, "humidity": 60},
+            "weather": [{"id": 800, "main": "Clear", "description": "clear sky"}],
+            "wind": {"speed": 3.0},
+            "pop": 0.0,
+        }
+        for day in range(6)
+    ]
 
     async def fake_request(self, url, params):
-        captured["params"] = params
-        return {"daily": {"time": ["2026-09-10"]}, "hourly": {"time": ["2026-09-10T00:00"]}}
+        return {"city": {"name": "X"}, "list": entries}
 
     monkeypatch.setattr(WeatherService, "_request", fake_request)
     service = WeatherService()
-    await service.get_forecast(26.45, 80.33, days=1, model="gfs_seamless")
-    assert captured["params"].get("models") == "gfs_seamless"
+    # days=12 must not raise even though the route validates days <= 16;
+    # the service clamps to OpenWeather's 5-day window.
+    result = await service.get_forecast(26.45, 80.33, days=12)
+    assert len(result.forecast) == 5
 
 
 # ------------------------------------------------------------------ #
@@ -526,8 +537,8 @@ async def test_models_endpoint(client):
     response = await client.get("/weather/models")
     assert response.status_code == 200
     models = response.json()["models"]
-    assert any(m["id"] == "gfs_seamless" for m in models)
-    assert any(m["id"] == "ecmwf_ifs025" for m in models)
+    assert any(m["id"] == "best_match" for m in models)
+    assert all(m["source"] == "OpenWeather" for m in models)
 
 
 # ------------------------------------------------------------------ #

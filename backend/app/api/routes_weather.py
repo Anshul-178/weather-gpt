@@ -66,7 +66,11 @@ async def get_forecast(
     latitude: float = Query(..., ge=-90, le=90),
     longitude: float = Query(..., ge=-180, le=180),
     days: int = Query(7, ge=1, le=16),
-    model: Optional[str] = Query(None, max_length=60, description="NWP model id (see /weather/models)"),
+    model: Optional[str] = Query(
+        None,
+        max_length=60,
+        description="Forecast model id (see /weather/models); OpenWeather serves its own global model",
+    ),
 ) -> ForecastResponse:
     """Return normalized daily + hourly forecast for coordinates."""
     try:

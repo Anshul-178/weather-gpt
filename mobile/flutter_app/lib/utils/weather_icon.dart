@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
-/// WMO weather interpretation codes (Open-Meteo standard).
+/// WMO weather interpretation codes. The backend normalizes provider
+/// condition ids (OpenWeather) onto these codes before sending them to the app.
 /// See: https://open-meteo.com/en/docs/#weathervariables
 class WeatherCode {
   final int code;

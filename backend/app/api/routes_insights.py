@@ -43,7 +43,7 @@ logger = get_logger(__name__)
 router = APIRouter(prefix="/weather", tags=["insights"])
 
 # Max simultaneous provider fetches for multi-city overview. Keeps the burst
-# below provider rate limits (Open-Meteo free tier) on cache misses.
+# below provider rate limits (OpenWeather free tier) on cache misses.
 _CITY_FETCH_CONCURRENCY = 3
 
 # Monitoring cities used when no explicit list is provided.
@@ -60,15 +60,11 @@ DEFAULT_CITIES: list[dict[str, object]] = [
     {"name": "Kanpur", "latitude": 26.4499, "longitude": 80.3319},
 ]
 
-# NWP models available through Open-Meteo (grid + documentation names).
+# Forecast models behind OpenWeather's 5-day endpoint (the free tier serves
+# OWM's own global model; the ids below are informational for the UI).
 NWP_MODELS: list[dict[str, str]] = [
-    {"id": "best_match", "name": "Best match (auto)", "source": "Open-Meteo"},
-    {"id": "gfs_seamless", "name": "GFS seamless (NOAA)", "source": "NOAA GFS / HRRR"},
-    {"id": "ecmwf_ifs025", "name": "ECMWF IFS 0.25°", "source": "ECMWF"},
-    {"id": "icon_seamless", "name": "ICON seamless (DWD)", "source": "DWD ICON"},
-    {"id": "ukmo_seamless", "name": "UKMO Global (UK Met Office)", "source": "Met Office"},
-    {"id": "gem_seamless", "name": "GEM (Canada)", "source": "CMC"},
-    {"id": "jma_seamless", "name": "JMA (Japan)", "source": "JMA"},
+    {"id": "best_match", "name": "Best match (auto)", "source": "OpenWeather"},
+    {"id": "owm_global", "name": "OpenWeather global model", "source": "OpenWeather"},
 ]
 
 
@@ -218,7 +214,7 @@ async def _gather_cities(city_list: list[dict[str, object]]) -> list[CityWeather
     """Fetch current weather for all cities with bounded concurrency.
 
     Firing 10+ provider requests simultaneously (the default city set) bursts
-    past Open-Meteo's free-tier rate limit and trips a 429 for the whole
+    past OpenWeather's free-tier rate limit and trips a 429 for the whole
     deployment. A small semaphore keeps the burst width modest; cached cities
     are not affected because cache hits never reach the provider.
     """

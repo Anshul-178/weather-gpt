@@ -1,10 +1,12 @@
 """Weather service.
 
-Isolates the weather provider (Open-Meteo by default, OpenWeather supported)
-behind this module.
+Isolates the weather provider (OpenWeather) behind this module.
 No provider-specific logic should spread into routes or other services.
 Provider data is the source of truth; it is normalized into the internal
 weather schemas defined in app.schemas.weather.
+
+Historical/climate data is served by the Open-Meteo Archive API via
+historical_service.py — the only place Open-Meteo is still used.
 """
 
 import asyncio
@@ -27,7 +29,9 @@ from app.utils.units import wind_direction_to_compass
 
 logger = get_logger(__name__)
 
-# Open-Meteo WMO weather codes → human-readable conditions.
+# WMO weather codes → human-readable conditions. OpenWeather condition ids
+# are mapped onto these codes (see _OWM_ID_TO_WMO) so the rest of the app
+# (alerts, aviation, activity engine, Flutter icons) keeps one code space.
 WMO_CODES: dict[int, str] = {
     0: "Clear sky",
     1: "Mainly clear",
@@ -57,6 +61,22 @@ WMO_CODES: dict[int, str] = {
     95: "Thunderstorm",
     96: "Thunderstorm with slight hail",
     99: "Thunderstorm with heavy hail",
+}
+
+# OpenWeather condition id → WMO weather code (groups: 2xx thunderstorm,
+# 3xx drizzle, 5xx rain, 6xx snow, 7xx atmosphere, 800 clear, 80x clouds).
+_OWM_ID_TO_WMO: dict[int, int] = {
+    200: 95, 201: 95, 202: 95, 210: 95, 211: 95, 212: 95, 221: 95,
+    230: 96, 231: 96, 232: 96,
+    300: 51, 301: 51, 302: 81, 310: 51, 311: 81, 312: 82, 313: 81,
+    314: 82, 321: 81,
+    500: 61, 501: 63, 502: 65, 503: 65, 504: 65, 511: 66,
+    520: 80, 521: 81, 522: 82, 531: 81,
+    600: 71, 601: 73, 602: 75, 611: 66, 612: 66, 613: 66, 615: 66,
+    616: 66, 620: 85, 621: 86, 622: 86,
+    701: 45, 711: 45, 721: 45, 731: 45, 741: 45, 751: 45, 761: 45,
+    762: 45, 771: 45, 781: 45,
+    800: 0, 801: 1, 802: 2, 803: 2, 804: 3,
 }
 
 
@@ -92,6 +112,29 @@ def _condition_from_code(code: Optional[int]) -> Optional[str]:
     if code is None:
         return None
     return WMO_CODES.get(int(code), "Unknown")
+
+
+def _wmo_from_owm_id(owm_id: Optional[Any]) -> Optional[int]:
+    """Map an OpenWeather condition id onto the internal WMO code space."""
+    if owm_id is None:
+        return None
+    try:
+        owm_id = int(owm_id)
+    except (TypeError, ValueError):
+        return None
+    if owm_id in _OWM_ID_TO_WMO:
+        return _OWM_ID_TO_WMO[owm_id]
+    # Unknown id: fall back to its hundred-group so new provider ids still
+    # map to a sensible family (2xx thunder, 3xx drizzle, 5xx rain, …).
+    group = (owm_id // 100) * 100
+    group_fallback = {
+        200: 95, 300: 51, 500: 61, 600: 71, 700: 45, 800: 0,
+    }.get(group)
+    if group_fallback is not None:
+        return group_fallback
+    if 800 < owm_id < 900:
+        return 2
+    return None
 
 
 def _at(values: Any, index: int) -> Any:
@@ -140,67 +183,12 @@ class WeatherService:
         self, latitude: float, longitude: float, location: Optional[GeoLocation] = None
     ) -> CurrentWeatherResponse:
         """Return normalized current weather for coordinates."""
-        if self._uses_openweathermap():
-            payload = await self._request(
-                f"{self._provider_base_url()}/weather",
-                {"lat": latitude, "lon": longitude, "units": "metric"},
-            )
-            response = self._normalize_openweathermap_current(
-                payload, latitude, longitude, location
-            )
-            self._validate_response(response)
-            return response
-
-        params = {
-            "latitude": latitude,
-            "longitude": longitude,
-            "current": ",".join(
-                [
-                    "temperature_2m",
-                    "relative_humidity_2m",
-                    "apparent_temperature",
-                    "is_day",
-                    "precipitation",
-                    "weather_code",
-                    "cloud_cover",
-                    "pressure_msl",
-                    "visibility",
-                    "wind_speed_10m",
-                    "wind_direction_10m",
-                ]
-            ),
-            "hourly": "uv_index",
-            "forecast_days": 1,
-        }
-        payload = await self._request(f"{settings.weather_api_base_url}/forecast", params)
-        current = payload.get("current") or {}
-        code = current.get("weather_code")
-
-        normalized = CurrentWeather(
-            temperature=current.get("temperature_2m"),
-            feels_like=current.get("apparent_temperature"),
-            humidity=current.get("relative_humidity_2m"),
-            wind_speed=current.get("wind_speed_10m"),  # Open-Meteo default: km/h
-            wind_direction=current.get("wind_direction_10m"),
-            wind_direction_compass=wind_direction_to_compass(
-                current.get("wind_direction_10m")
-            ),
-            pressure=current.get("pressure_msl"),
-            precipitation=current.get("precipitation"),
-            cloud_cover=current.get("cloud_cover"),
-            visibility=self._visibility_km(current.get("visibility")),
-            uv_index=self._current_uv(payload.get("hourly"), current.get("time")),
-            condition=_condition_from_code(code),
-            weather_code=code,
-            is_day=bool(current["is_day"]) if current.get("is_day") is not None else None,
+        self._require_api_key()
+        payload = await self._request(
+            f"{self._provider_base_url()}/weather",
+            {"lat": latitude, "lon": longitude, "units": "metric"},
         )
-        loc = location or GeoLocation(
-            name=f"{latitude:.2f}, {longitude:.2f}", latitude=latitude, longitude=longitude
-        )
-        observed_at = _parse_iso(current.get("time")) or datetime.now()
-        response = CurrentWeatherResponse(
-            location=loc, current=normalized, timestamp=observed_at
-        )
+        response = self._normalize_current(payload, latitude, longitude, location)
         self._validate_response(response)
         return response
 
@@ -214,79 +202,34 @@ class WeatherService:
     ) -> ForecastResponse:
         """Return normalized daily + hourly forecast for coordinates.
 
-        `model` selects a specific NWP model (e.g. gfs_seamless, ecmwf_ifs025,
-        icon_seamless) — see /weather/models for available options.
+        OpenWeather's free forecast endpoint provides 5-day/3-hour data; the
+        `days` parameter is clamped to what the provider returns.
         """
-        # OpenWeather's free 5-day endpoint provides 3-hour forecast points;
-        # Open-Meteo supports the existing 16-day route contract.
-        max_days = 5 if self._uses_openweathermap() else 16
-        days = max(1, min(days, max_days))
-        if self._uses_openweathermap():
-            payload = await self._request(
-                f"{self._provider_base_url()}/forecast",
-                {"lat": latitude, "lon": longitude, "units": "metric"},
-            )
-            loc = self._openweathermap_location(payload, latitude, longitude, location)
-            response = self._normalize_openweathermap_forecast(payload, loc, days)
-            self._validate_response(response)
-            return response
-
-        params = {
-            "latitude": latitude,
-            "longitude": longitude,
-            "daily": ",".join(
-                [
-                    "weather_code",
-                    "temperature_2m_max",
-                    "temperature_2m_min",
-                    "sunrise",
-                    "sunset",
-                    "uv_index_max",
-                    "precipitation_sum",
-                    "precipitation_probability_max",
-                    "wind_speed_10m_max",
-                ]
-            ),
-            "hourly": ",".join(
-                [
-                    "temperature_2m",
-                    "apparent_temperature",
-                    "precipitation_probability",
-                    "precipitation",
-                    "weather_code",
-                    "relative_humidity_2m",
-                    "visibility",
-                    "wind_speed_10m",
-                    "uv_index",
-                ]
-            ),
-            "forecast_days": days,
-        }
-        if model:
-            params["models"] = model
-        payload = await self._request(f"{settings.weather_api_base_url}/forecast", params)
-        loc = location or GeoLocation(
-            name=f"{latitude:.2f}, {longitude:.2f}", latitude=latitude, longitude=longitude
+        days = max(1, min(days, 5))
+        self._require_api_key()
+        payload = await self._request(
+            f"{self._provider_base_url()}/forecast",
+            {"lat": latitude, "lon": longitude, "units": "metric"},
         )
+        loc = self._location_from_payload(payload, latitude, longitude, location)
         response = self._normalize_forecast(payload, loc, days)
         self._validate_response(response)
         return response
 
     async def geocode(self, name: str, count: int = 5) -> list[GeoLocation]:
-        """Search for places by name using the provider geocoding API."""
-        params = {"name": name, "count": count, "language": "en", "format": "json"}
-        payload = await self._request(f"{settings.geocoding_api_base_url}/search", params)
-        results = payload.get("results") or []
+        """Search for places by name using the OpenWeather geocoding API."""
+        params = {"q": name, "limit": max(1, min(count, 10))}
+        payload = await self._request(f"{settings.geocoding_api_base_url}/direct", params)
         locations: list[GeoLocation] = []
-        for item in results:
+        for item in payload if isinstance(payload, list) else []:
             try:
                 locations.append(
                     GeoLocation(
                         name=item.get("name") or name,
-                        latitude=float(item["latitude"]),
-                        longitude=float(item["longitude"]),
+                        latitude=float(item["lat"]),
+                        longitude=float(item["lon"]),
                         country=item.get("country"),
-                        admin1=item.get("admin1"),
+                        admin1=item.get("state"),
                     )
                 )
             except (KeyError, TypeError, ValueError):
@@ -297,15 +240,23 @@ class WeatherService:
     # internals
     # ------------------------------------------------------------------ #
 
-    def _uses_openweathermap(self) -> bool:
-        """Return whether the configured forecast provider is OpenWeather."""
-        return "openweathermap.org" in settings.weather_api_base_url.lower()
+    @staticmethod
+    def _api_key() -> str:
+        """Return the configured OpenWeather API key (may be empty)."""
+        return settings.weather_api_key or ""
+
+    def _require_api_key(self) -> None:
+        """Fail fast when the OpenWeather key is missing."""
+        if not settings.weather_api_key:
+            raise WeatherProviderError(
+                "OpenWeather is selected but WEATHER_API_KEY is not configured."
+            )
 
     def _provider_base_url(self) -> str:
         """Return the configured provider base URL without a trailing slash."""
         return settings.weather_api_base_url.rstrip("/")
 
-    def _openweathermap_location(
+    def _location_from_payload(
         self,
         payload: dict[str, Any],
         latitude: float,
@@ -326,7 +277,7 @@ class WeatherService:
             or metadata.get("country"),
         )
 
-    def _normalize_openweathermap_current(
+    def _normalize_current(
         self,
         payload: dict[str, Any],
         latitude: float,
@@ -339,6 +290,7 @@ class WeatherService:
         wind = payload.get("wind") or {}
         clouds = payload.get("clouds") or {}
         rain = payload.get("rain") or {}
+        snow = payload.get("snow") or {}
         timestamp = datetime.fromtimestamp(
             float(payload.get("dt", datetime.now(tz=timezone.utc).timestamp())),
             tz=timezone.utc,
@@ -349,6 +301,11 @@ class WeatherService:
         if sunrise is not None and sunset is not None:
             is_day = sunrise <= payload.get("dt", 0) <= sunset
 
+        # Precipitation: prefer recent-hour rain, then snow, then 3h windows.
+        precipitation = rain.get("1h", rain.get("3h"))
+        if precipitation is None:
+            precipitation = snow.get("1h", snow.get("3h"))
+
         normalized = CurrentWeather(
             temperature=current.get("temp"),
             feels_like=current.get("feels_like"),
@@ -357,22 +314,20 @@ class WeatherService:
             wind_direction=wind.get("deg"),
             wind_direction_compass=wind_direction_to_compass(wind.get("deg")),
             pressure=current.get("pressure"),
-            precipitation=rain.get("1h", rain.get("3h")),
+            precipitation=precipitation,
             cloud_cover=clouds.get("all"),
             visibility=self._metres_to_km(payload.get("visibility")),
             condition=weather.get("description") or weather.get("main"),
-            weather_code=weather.get("id"),
+            weather_code=_wmo_from_owm_id(weather.get("id")),
             is_day=is_day,
         )
         return CurrentWeatherResponse(
-            location=self._openweathermap_location(
-                payload, latitude, longitude, location
-            ),
+            location=self._location_from_payload(payload, latitude, longitude, location),
             current=normalized,
             timestamp=timestamp,
         )
 
-    def _normalize_openweathermap_forecast(
+    def _normalize_forecast(
         self, payload: dict[str, Any], loc: GeoLocation, days: int
     ) -> ForecastResponse:
         """Normalize OpenWeather's 3-hour forecast into daily/hourly points."""
@@ -418,7 +373,7 @@ class WeatherService:
                     wind_speed_max=max(wind_speeds) if wind_speeds else None,
                     condition=representative_weather.get("description")
                     or representative_weather.get("main"),
-                    weather_code=representative_weather.get("id"),
+                    weather_code=_wmo_from_owm_id(representative_weather.get("id")),
                 )
             )
 
@@ -441,7 +396,7 @@ class WeatherService:
                         humidity=main.get("humidity"),
                         condition=item_weather.get("description")
                         or item_weather.get("main"),
-                        weather_code=item_weather.get("id"),
+                        weather_code=_wmo_from_owm_id(item_weather.get("id")),
                         visibility=self._metres_to_km(item.get("visibility")),
                     )
                 )
@@ -453,7 +408,7 @@ class WeatherService:
         """Convert OpenWeather wind speed from m/s to km/h."""
         if value is None:
             return None
-        return float(value) * 3.6
+        return round(float(value) * 3.6, 1)
 
     @staticmethod
     def _metres_to_km(value: Any) -> Optional[float]:
@@ -471,13 +426,14 @@ class WeatherService:
             snow.get("3h", snow.get("1h", 0))
         )
 
-    async def _request(self, url: str, params: dict[str, Any]) -> dict[str, Any]:
+    async def _request(self, url: str, params: dict[str, Any]) -> Any:
         """Perform a GET request with timeout and error mapping.
 
         Transient provider failures (HTTP 5xx) are retried with a short
         backoff. HTTP 429 is surfaced immediately so the cache layer can enter
         a cooldown and serve the last known good weather instead of creating
-        more rate-limited requests.
+        more rate-limited requests. Returns the parsed JSON body, which for
+        the OpenWeather geocoding endpoint is a JSON array.
         """
         if "openweathermap.org" in url:
             if not settings.weather_api_key:
@@ -485,13 +441,6 @@ class WeatherService:
                     "OpenWeather is selected but WEATHER_API_KEY is not configured."
                 )
             params = {**params, "appid": settings.weather_api_key}
-        # Provider API key (needed for paid-tier Open-Meteo access when set).
-        elif (
-            settings.weather_api_key
-            and "api.open-meteo.com" in url
-            and "api.open-meteo.com" in settings.weather_api_base_url
-        ):
-            params = {**params, "apikey": settings.weather_api_key}
         max_attempts = 3
         async with httpx.AsyncClient(
             timeout=settings.weather_timeout_seconds,
@@ -546,88 +495,6 @@ class WeatherService:
                     logger.warning("Weather provider returned invalid JSON: %s", exc)
                     raise WeatherProviderError("The weather service returned invalid data.") from exc
         raise WeatherProviderError("The weather service returned an error.")  # pragma: no cover
-
-    def _normalize_forecast(
-        self, payload: dict[str, Any], loc: GeoLocation, days: int
-    ) -> ForecastResponse:
-        """Convert provider payload into ForecastResponse."""
-        daily = payload.get("daily") or {}
-        hourly = payload.get("hourly") or {}
-
-        daily_points: list[DailyPoint] = []
-        for index, date_str in enumerate(daily.get("time") or []):
-            if index >= days:
-                break
-            daily_points.append(
-                DailyPoint(
-                    date=str(date_str),
-                    temperature_max=_at(daily.get("temperature_2m_max"), index),
-                    temperature_min=_at(daily.get("temperature_2m_min"), index),
-                    precipitation_sum=_at(daily.get("precipitation_sum"), index),
-                    precipitation_probability=_at(
-                        daily.get("precipitation_probability_max"), index
-                    ),
-                    wind_speed_max=_at(daily.get("wind_speed_10m_max"), index),
-                    uv_index_max=_at(daily.get("uv_index_max"), index),
-                    condition=_condition_from_code(_at(daily.get("weather_code"), index)),
-                    weather_code=_at(daily.get("weather_code"), index),
-                    sunrise=_at(daily.get("sunrise"), index),
-                    sunset=_at(daily.get("sunset"), index),
-                )
-            )
-
-        hourly_points: list[HourlyPoint] = []
-        for index, time_str in enumerate(hourly.get("time") or []):
-            parsed_time = _parse_iso(time_str)
-            if parsed_time is None:
-                continue
-            code = _at(hourly.get("weather_code"), index)
-            hourly_points.append(
-                HourlyPoint(
-                    time=parsed_time,
-                    temperature=_at(hourly.get("temperature_2m"), index),
-                    feels_like=_at(hourly.get("apparent_temperature"), index),
-                    precipitation_probability=_at(
-                        hourly.get("precipitation_probability"), index
-                    ),
-                    precipitation=_at(hourly.get("precipitation"), index),
-                    wind_speed=_at(hourly.get("wind_speed_10m"), index),
-                    humidity=_at(hourly.get("relative_humidity_2m"), index),
-                    uv_index=_at(hourly.get("uv_index"), index),
-                    visibility=self._visibility_km(_at(hourly.get("visibility"), index)),
-                    condition=_condition_from_code(code),
-                    weather_code=code,
-                )
-            )
-
-        return ForecastResponse(location=loc, forecast=daily_points, hourly=hourly_points)
-
-    def _current_uv(
-        self, hourly: Optional[dict[str, Any]], current_time: Optional[str]
-    ) -> Optional[float]:
-        """Pick the closest hourly UV index value for the current time."""
-        if not hourly or not hourly.get("time") or not current_time:
-            return None
-        target = _parse_iso(current_time)
-        if target is None:
-            return None
-        best_value: Optional[float] = None
-        best_delta: Optional[float] = None
-        for time_str, value in zip(hourly.get("time") or [], hourly.get("uv_index") or []):
-            hour_time = _parse_iso(time_str)
-            if hour_time is None or value is None:
-                continue
-            delta = abs((hour_time - target).total_seconds())
-            if best_delta is None or delta < best_delta:
-                best_value = value
-                best_delta = delta
-        return best_value
-
-    def _visibility_km(self, visibility_metres: Optional[float]) -> Optional[float]:
-        """Convert provider visibility (metres) to kilometres."""
-        if visibility_metres is None:
-            return None
-        return round(visibility_metres / 1000.0, 1)
 
     def _validate_response(self, response: Any) -> None:
         """Ensure normalized response contains usable data; raise otherwise."""

@@ -12,7 +12,7 @@ Purpose: let an agent jump straight to the right file/symbol for a change **with
 |---|---|---|
 | Backend API | FastAPI (async), Python 3.11+ (tested on 3.13) | `backend/app/` |
 | Database | SQLAlchemy async — SQLite dev (`./weathergpt.db`), PostgreSQL prod | `backend/app/database/`, `backend/app/models/` |
-| Weather provider | Open-Meteo (default, no key) or OpenWeather (needs `WEATHER_API_KEY`) | `backend/app/services/weather_service.py` |
+| Weather provider | OpenWeather (needs `WEATHER_API_KEY`) for current/forecast/geocoding; Open-Meteo **Archive only** for historical/climate | `backend/app/services/weather_service.py`, `backend/app/services/historical_service.py` |
 | AI/LLM | Gemini → Mistral → Groq fallback chain, rule-based fallback if all fail | `backend/app/services/llm_manager.py`, `backend/app/services/ai_service.py` |
 | Cache | **In-memory TTL cache only** (no Redis) | `backend/app/services/cache_service.py` |
 | Push | Firebase Cloud Messaging HTTP v1 (dry-run logs if unconfigured) | `backend/app/services/push_service.py` |
@@ -75,10 +75,10 @@ All routers are included in `main.py` at the bottom.
 
 | File | Key symbols | Notes |
 |---|---|---|
-| `weather_service.py` | `WeatherService` (`get_current`, `get_forecast`, `_request`), `WeatherProviderError`, `WeatherRateLimitError`, `WeatherValidationError`, `_condition_from_code` | Provider I/O + normalization. Unit conversion via `utils/units.py`. 429 → `WeatherRateLimitError`. `follow_redirects=True` on httpx |
+| `weather_service.py` | `WeatherService` (`get_current`, `get_forecast`, `geocode`, `_request`), `WeatherProviderError`, `WeatherRateLimitError`, `WeatherValidationError`, `_condition_from_code`, `_wmo_from_owm_id` | OpenWeather I/O + normalization (OpenWeather condition ids are mapped to WMO codes via `_wmo_from_owm_id`). Wind m/s → km/h. 429 → `WeatherRateLimitError`. `follow_redirects=True` on httpx. Forecast clamped to 5 days |
 | `cached_weather_service.py` | `cached_weather_service` singleton, `CachedWeatherService.get_current/get_forecast`, module globals `_LAST_GOOD`, `_IN_FLIGHT_LOCKS` (single-flight coalescing), `_PROVIDER_RATE_LIMITED_UNTIL` | Cache layer over WeatherService; serves stale last-good on provider 429 |
 | `cache_service.py` | `cache_service` singleton, `CacheService.get/set/delete_pattern/clear_memory`, module global `_MEMORY_CACHE` | **In-memory TTL cache (no Redis).** JSON payload + monotonic expiry. Only place cache code lives |
-| `historical_service.py` | `HistoricalService`, `HistoricalServiceError` | Open-Meteo **Archive API** for past obs + climate trends; cached |
+| `historical_service.py` | `HistoricalService`, `HistoricalServiceError` | Open-Meteo **Archive API** (the only Open-Meteo usage) for past obs + climate trends; cached; base URL via `settings.archive_api_base_url` |
 | `ai_service.py` | `AIService`, `LLMError` | Chat brain: language detect → prompt build → `llm_manager` → validate. Rule-based fallback when no LLM. Routes never call LLM directly |
 | `llm_manager.py` | `llm_manager` singleton, `LLMManager`, `ProviderState`, `_ProviderHealth` | Orchestrator: provider order (`LLM_PROVIDER_ORDER`), fallback on rate-limit, circuit-breaker cooldowns, `get_status()` (powers `/llm/status`) |
 | `llm_providers.py` | `ErrorKind`, `ProviderError`, `classify_exception`, `LLMProvider` (ABC), `GeminiProvider`, `MistralProvider`, `GroqProvider` | One class per provider; normalizes SDK errors into `ErrorKind` (RATE_LIMIT/SERVER/TIMEOUT/…) |
@@ -186,7 +186,7 @@ All routers are included in `main.py` at the bottom.
 8. **Logging never contains secrets/tokens/keys**; use `get_logger(__name__)`.
 9. **Cache is in-memory & per-process** (single-instance design). If scaling multi-instance, a shared store would be needed for cache + rate limiter.
 10. **Provider failures degrade gracefully:** 503 for provider down (never fabricated data); stale last-good served on provider 429 (`cached_weather_service.py`).
-11. **Tests:** `backend/tests/`, pytest with `asyncio_mode = auto` — async tests need no decorator. Fixtures in `tests/conftest.py` (`_clear_cache` resets `_MEMORY_CACHE` + `_LAST_GOOD`; `_sqlite_url` forces SQLite + Open-Meteo; `_mock_provider` patches `WeatherService._request`).
+11. **Tests:** `backend/tests/`, pytest with `asyncio_mode = auto` — async tests need no decorator. Fixtures in `tests/conftest.py` (`_clear_cache` resets `_MEMORY_CACHE` + `_LAST_GOOD`; `_sqlite_url` forces SQLite + OpenWeather with a dummy key; `_mock_provider` patches `WeatherService._request` with OpenWeather-shaped payloads).
 
 ---
 
@@ -197,6 +197,6 @@ All routers are included in `main.py` at the bottom.
 | `prd.md` | Product requirements |
 | `technical.md` | Technical spec (§ numbers are referenced in code docstrings) |
 | `IMPLEMENTATION_PLAN.md` | Build plan / dependency list |
-| `README.md` | Setup, env vars table, provider switching (Open-Meteo ↔ OpenWeather) |
+| `README.md` | Setup, env vars table, provider docs (OpenWeather + Open-Meteo Archive) |
 
 Section references like "spec §17" or "prompt §10" in docstrings point into `technical.md` / the original development prompt.

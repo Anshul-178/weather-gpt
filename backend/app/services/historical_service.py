@@ -1,6 +1,9 @@
 """Historical weather & climate trend service.
 
 Uses the Open-Meteo Archive API (free, no key) to fetch past observations.
+This is the ONLY remaining Open-Meteo usage: current weather, forecast and
+geocoding live in weather_service.py on OpenWeather. Historical/climate data
+is not available on OpenWeather's standard plan.
 Feature 7 of the problem statement: climate trend and historical weather
 analysis for researchers and planners.
 
@@ -36,7 +39,7 @@ from app.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
-ARCHIVE_BASE_URL = "https://archive-api.open-meteo.com/v1/archive"
+ARCHIVE_BASE_URL = f"{settings.archive_api_base_url.rstrip('/')}/archive"
 
 _HISTORICAL_LAST_GOOD: dict[str, tuple[float, dict]] = {}
 _HISTORICAL_LAST_GOOD_TTL_SECONDS = 3600
@@ -368,13 +371,6 @@ class HistoricalService:
         HTTP 429 is retried once with backoff. On persistent provider errors
         the caller falls back to cache / last-good payload.
         """
-        # Provider API key (moves quota from the shared deployment IP to the account).
-        if (
-            settings.weather_api_key
-            and "open-meteo.com" in ARCHIVE_BASE_URL
-            and "api.open-meteo.com" in settings.weather_api_base_url
-        ):
-            params = {**params, "apikey": settings.weather_api_key}
         try:
             async with httpx.AsyncClient(timeout=settings.weather_timeout_seconds) as client:
                 response = await client.get(ARCHIVE_BASE_URL, params=params)

@@ -28,16 +28,17 @@ class Settings(BaseSettings):
     cors_origins: list[str] = ["*"]  # restrict in production
 
     # --- Weather provider ---
-    # --- Weather provider ---
-    # Default is Open-Meteo (free, no key required for non-commercial use).
-    # Set WEATHER_API_BASE_URL to OpenWeather's 2.5 API and WEATHER_API_KEY
-    # to use OpenWeather for current conditions and the 5-day forecast:
-    #   https://api.openweathermap.org/data/2.5
-    #   Weather Forecast API  → https://api.open-meteo.com/v1/forecast
-#   Geocoding API         → https://geocoding-api.open-meteo.com/v1/search
+    # Weather + geocoding: OpenWeather (requires WEATHER_API_KEY).
+    #   Current weather → https://api.openweathermap.org/data/2.5/weather
+    #   5-day forecast  → https://api.openweathermap.org/data/2.5/forecast
+    #   Geocoding       → https://api.openweathermap.org/geo/1.0/direct
+    # Historical/climate data stays on the Open-Meteo Archive API (no key).
     weather_api_key: Optional[str] = None
-    weather_api_base_url: str = "https://api.open-meteo.com/v1"
-    geocoding_api_base_url: str = "https://geocoding-api.open-meteo.com/v1"
+    weather_api_base_url: str = "https://api.openweathermap.org/data/2.5"
+    geocoding_api_base_url: str = "https://api.openweathermap.org/geo/1.0"
+    # Open-Meteo Archive API — the only Open-Meteo service still used
+    # (historical observations + climate trends).
+    archive_api_base_url: str = "https://archive-api.open-meteo.com/v1"
     weather_timeout_seconds: float = 10.0
 
     # --- LLM providers (multi-provider fallback) ---
@@ -86,7 +87,7 @@ class Settings(BaseSettings):
     # When the weather provider returns 429 (too many requests), serve the
     # best available cached/stale payload instead of failing the request.
     serve_stale_on_provider_rate_limit: bool = True
-    # Do not immediately retry Open-Meteo after it has sent a 429 response.
+    # Do not immediately retry OpenWeather after it has sent a 429 response.
     weather_rate_limit_cooldown_seconds: int = 60
 
     # --- Alerts ---

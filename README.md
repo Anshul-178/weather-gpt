@@ -11,8 +11,7 @@ alerts. The weather provider is always the source of truth — the AI never inve
 ## Features
 
 - 🌡️ **Current weather** — temperature, feels-like, humidity, wind, pressure, visibility, UV, condition
-- 📅 **Forecast** — hourly + 7-day (up to 16 days) forecasts, with **NWP model selection**
-  (GFS, ECMWF IFS, DWD ICON, UKMO, GEM, JMA via `?model=`)
+- 📅 **Forecast** — hourly + 5-day forecasts (OpenWeather 3-hourly points)
 - 💬 **AI chat** — ask *"Will it rain today?"*, *"What should I wear?"*, *"What about the evening?"*
   (follow-up questions keep location/date context)
 - 🗣️ **Voice + multilingual** — STT and neural TTS in **9 Indian languages** (English, Hindi, Tamil,
@@ -25,8 +24,9 @@ alerts. The weather provider is always the source of truth — the AI never inve
   background scheduler that **pushes to devices** (FCM; dry-run logging without credentials)
 - 📲 **Push notifications** — device token registration, area-targeted broadcast, dispatch log
 - 🌊 **Real-time WebSocket** — `/ws/weather` streams live conditions for monitoring dashboards
-- 📈 **Climate trends & history** — Open-Meteo Archive-powered historical weather, monthly climate
-  aggregates, warming trend (°C/decade), and current-month anomaly
+- 📈 **Climate trends & history** — historical weather, monthly climate
+  aggregates, warming trend (°C/decade), and current-month anomaly (Open-Meteo Archive API —
+  the only Open-Meteo usage)
 - 🌾 **Crop advisories** — deterministic irrigation/spraying/disease/harvest guidance for 10 Indian
   crops from live forecast data
 - ✈️ **Aviation briefing** — VFR-style go/no-go assessment with best-flight-window suggestions
@@ -38,7 +38,7 @@ alerts. The weather provider is always the source of truth — the AI never inve
 ## Architecture
 
 ```
-Flutter app ──HTTPS/WS──► FastAPI backend ──► Weather provider (Open-Meteo + Archive)
+Flutter app ──HTTPS/WS──► FastAPI backend ──► Weather provider (OpenWeather + Open-Meteo Archive)
                                 ├──► LLM (OpenAI-compatible, optional)
                                 ├──► PostgreSQL (users, locations, alerts, chat, devices)
                                 ├──► In-memory cache (weather, geocoding)
@@ -80,9 +80,10 @@ weathergpt/
 - Python 3.11+ (tested on 3.13)
 - Flutter SDK 3.22+ (Android toolchain for emulators)
 - Docker (optional, for PostgreSQL)
-- No weather/LLM API keys required to start: the default weather provider is
-  [Open-Meteo](https://open-meteo.com) (free, no key) and the AI works without an LLM key using a
-  deterministic rule-based responder. Add an `LLM_API_KEY` for richer natural-language answers.
+- A free [OpenWeather](https://openweathermap.org/api) API key is required for current weather,
+  forecast, and geocoding. Historical/climate data comes from the Open-Meteo Archive API
+  (free, no key). The AI works without an LLM key using a deterministic rule-based responder;
+  add an `LLM_API_KEY` for richer natural-language answers.
 
 ## Backend setup
 
@@ -109,25 +110,28 @@ needed for local development.
 
 ## Weather provider endpoints
 
-The backend uses [Open-Meteo](https://open-meteo.com) by default, and also supports
-[OpenWeather](https://openweathermap.org/api) for current conditions and the 5-day forecast.
-OpenWeather requires an API key and returns forecast data at 3-hour intervals.
+The backend uses [OpenWeather](https://openweathermap.org/api) for current weather, the 5-day
+forecast, and geocoding (an API key is required). Historical observations and climate trends come
+from the [Open-Meteo Archive API](https://open-meteo.com/en/docs/historical-weather-api) (free,
+no key) — the only remaining Open-Meteo usage.
 
-Default Open-Meteo endpoints:
+OpenWeather endpoints:
 
-| Provider | Endpoint |
+| Service | Endpoint |
 |---|---|
-| Weather Forecast API | `https://api.open-meteo.com/v1/forecast` |
-| Geocoding API | `https://geocoding-api.open-meteo.com/v1/search` |
+| Current weather | `https://api.openweathermap.org/data/2.5/weather` |
+| 5-day/3-hour forecast | `https://api.openweathermap.org/data/2.5/forecast` |
+| Geocoding | `https://api.openweathermap.org/geo/1.0/direct` |
+| Historical/climate (Open-Meteo Archive) | `https://archive-api.open-meteo.com/v1/archive` |
 
-To use OpenWeather, set these values in `backend/.env`:
+Required values in `backend/.env`:
 
 ```dotenv
 WEATHER_API_BASE_URL=https://api.openweathermap.org/data/2.5
 WEATHER_API_KEY=your_openweather_appid
+GEOCODING_API_BASE_URL=https://api.openweathermap.org/geo/1.0
+ARCHIVE_API_BASE_URL=https://archive-api.open-meteo.com/v1
 ```
-
-The backend keeps Open-Meteo for weather and geocoding unless those services are separately changed.
 
 ## Environment variables
 
@@ -135,8 +139,9 @@ See `backend/.env.example` (placeholders only — never commit a real `.env`):
 
 | Variable | Purpose |
 |---|---|
-| `WEATHER_API_KEY` / `WEATHER_API_BASE_URL` | Weather provider; OpenWeather requires a key |
-| `GEOCODING_API_BASE_URL` | Open-Meteo Geocoding API base URL |
+| `WEATHER_API_KEY` / `WEATHER_API_BASE_URL` | OpenWeather current/forecast provider (key required) |
+| `GEOCODING_API_BASE_URL` | OpenWeather geocoding base URL |
+| `ARCHIVE_API_BASE_URL` | Open-Meteo Archive API base URL (historical/climate only) |
 | `LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL` | Any OpenAI-compatible LLM (optional) |
 | `DATABASE_URL` | `postgresql+asyncpg://…` in production; SQLite default in dev |
 | `JWT_SECRET` | Token signing secret (change in production!) |
@@ -189,13 +194,12 @@ required.
 | POST | `/weather/activity-score` | Explainable activity score |
 | POST | `/weather/compare` | Two-location comparison |
 | GET | `/weather/best-time?activity=cycling` | Best time window |
-| GET | `/weather/historical?days=30` | Historical daily observations (archive) |
+| GET | `/weather/historical?days=30` | Historical daily observations (Open-Meteo Archive) |
 | GET | `/weather/climate?years=5` | Monthly climate aggregates + warming trend |
 | POST | `/weather/crop-advisory` | Deterministic crop-weather advisories |
 | POST | `/weather/aviation` | VFR-style aviation briefing |
 | GET | `/weather/city-overview` | Multi-city current conditions |
-| GET | `/weather/models` | Selectable NWP models |
-| GET | `/weather/forecast?model=gfs_seamless` | Forecast from a specific NWP model |
+| GET | `/weather/models` | Forecast model info (OpenWeather global model) |
 | POST | `/chat` | AI weather Q&A (weather context injected) |
 | POST | `/chat/tts` | Neural TTS in 9 Indian languages |
 | WS | `/ws/weather?latitude=&longitude=` | Live weather stream |

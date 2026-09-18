@@ -24,13 +24,17 @@ def _clear_cache():
 
 @pytest.fixture(autouse=True)
 def _sqlite_url(monkeypatch):
-    """Force SQLite + Open-Meteo for tests regardless of local .env."""
+    """Force SQLite + OpenWeather for tests regardless of local .env."""
     monkeypatch.setenv("DATABASE_URL", "sqlite+aiosqlite:///./test_weathergpt.db")
-    # Use Open-Meteo (free, no key) instead of whatever .env has.
+    # Use OpenWeather with a dummy key instead of whatever .env has.
     # Patch the cached settings object directly since lru_cache is already populated.
     import app.config
-    monkeypatch.setattr(app.config.settings, "weather_api_base_url", "https://api.open-meteo.com/v1")
-    monkeypatch.setattr(app.config.settings, "weather_api_key", None)
+    monkeypatch.setattr(
+        app.config.settings,
+        "weather_api_base_url",
+        "https://api.openweathermap.org/data/2.5",
+    )
+    monkeypatch.setattr(app.config.settings, "weather_api_key", "test-api-key")
 
 
 @pytest_asyncio.fixture
@@ -58,62 +62,71 @@ async def client():
 
 @pytest.fixture
 def provider_current_payload():
-    """Minimal Open-Meteo current-weather payload."""
+    """Minimal OpenWeather current-weather payload."""
     return {
-        "current": {
-            "time": "2026-09-10T12:00",
-            "temperature_2m": 32.4,
-            "relative_humidity_2m": 71,
-            "apparent_temperature": 36.1,
-            "is_day": 1,
-            "precipitation": 0.0,
-            "weather_code": 2,
-            "cloud_cover": 50,
-            "pressure_msl": 1005.2,
-            "visibility": 12000.0,
-            "wind_speed_10m": 12.5,
-            "wind_direction_10m": 180,
+        "coord": {"lon": 80.3319, "lat": 26.4499},
+        "weather": [{"id": 802, "main": "Clouds", "description": "scattered clouds"}],
+        "main": {
+            "temp": 32.4,
+            "feels_like": 36.1,
+            "pressure": 1005,
+            "humidity": 71,
         },
-        "hourly": {
-            "time": ["2026-09-10T12:00", "2026-09-10T13:00"],
-            "uv_index": [7.0, 6.5],
-        },
+        "visibility": 12000,
+        "wind": {"speed": 3.472222, "deg": 180},
+        "clouds": {"all": 50},
+        "dt": 1700000000,
+        "sys": {"country": "IN", "sunrise": 1, "sunset": 9999999999},
+        "name": "Kanpur",
     }
 
 
 @pytest.fixture
 def provider_forecast_payload():
-    """Minimal Open-Meteo forecast payload."""
+    """Minimal OpenWeather 5-day/3-hour forecast payload."""
     return {
-        "daily": {
-            "time": ["2026-09-10", "2026-09-11"],
-            "weather_code": [2, 61],
-            "temperature_2m_max": [35.0, 33.0],
-            "temperature_2m_min": [27.0, 26.0],
-            "sunrise": ["2026-09-10T06:00", "2026-09-11T06:00"],
-            "sunset": ["2026-09-10T18:30", "2026-09-11T18:30"],
-            "uv_index_max": [8.0, 6.0],
-            "precipitation_sum": [0.0, 4.2],
-            "precipitation_probability_max": [20, 75],
-            "wind_speed_10m_max": [18.0, 22.0],
+        "city": {
+            "name": "Kanpur",
+            "coord": {"lon": 80.3319, "lat": 26.4499},
+            "country": "IN",
         },
-        "hourly": {
-            "time": [
-                "2026-09-10T12:00",
-                "2026-09-10T13:00",
-                "2026-09-10T18:00",
-                "2026-09-11T12:00",
-            ],
-            "temperature_2m": [32.0, 33.0, 30.0, 31.0],
-            "apparent_temperature": [35.0, 36.0, 33.0, 34.0],
-            "precipitation_probability": [10, 15, 70, 75],
-            "precipitation": [0.0, 0.0, 1.2, 3.0],
-            "weather_code": [2, 2, 61, 61],
-            "relative_humidity_2m": [65, 66, 80, 82],
-            "visibility": [11000.0, 10500.0, 8000.0, 7000.0],
-            "wind_speed_10m": [12.0, 13.0, 20.0, 24.0],
-            "uv_index": [7.0, 6.5, 2.0, 6.0],
-        },
+        "list": [
+            {
+                "dt_txt": "2026-09-10 09:00:00",
+                "main": {"temp": 30.0, "feels_like": 33.0, "humidity": 60},
+                "weather": [{"id": 802, "main": "Clouds", "description": "scattered clouds"}],
+                "wind": {"speed": 3.5},
+                "pop": 0.2,
+                "visibility": 11000,
+            },
+            {
+                "dt_txt": "2026-09-10 12:00:00",
+                "main": {"temp": 35.0, "feels_like": 38.0, "humidity": 55},
+                "weather": [{"id": 802, "main": "Clouds", "description": "scattered clouds"}],
+                "wind": {"speed": 5.0},
+                "pop": 0.2,
+                "rain": {"3h": 0.0},
+                "visibility": 10500,
+            },
+            {
+                "dt_txt": "2026-09-10 18:00:00",
+                "main": {"temp": 30.0, "feels_like": 32.0, "humidity": 75},
+                "weather": [{"id": 500, "main": "Rain", "description": "light rain"}],
+                "wind": {"speed": 6.0},
+                "pop": 0.7,
+                "rain": {"3h": 1.2},
+                "visibility": 8000,
+            },
+            {
+                "dt_txt": "2026-09-11 12:00:00",
+                "main": {"temp": 33.0, "feels_like": 36.0, "humidity": 65},
+                "weather": [{"id": 501, "main": "Rain", "description": "moderate rain"}],
+                "wind": {"speed": 6.5},
+                "pop": 0.75,
+                "rain": {"3h": 3.0},
+                "visibility": 7000,
+            },
+        ],
     }
 
 
@@ -121,19 +134,17 @@ def _mock_provider(monkeypatch, current_payload, forecast_payload):
     """Patch WeatherService._request to return canned payloads."""
 
     async def fake_request(self, url, params):
-        if "geocoding" in url or "/search" in url:
-            return {
-                "results": [
-                    {
-                        "name": "Kanpur",
-                        "latitude": 26.4499,
-                        "longitude": 80.3319,
-                        "country": "India",
-                        "admin1": "Uttar Pradesh",
-                    }
-                ]
-            }
-        if params.get("daily"):
+        if "geo/1.0" in url or "/direct" in url:
+            return [
+                {
+                    "name": "Kanpur",
+                    "lat": 26.4499,
+                    "lon": 80.3319,
+                    "country": "IN",
+                    "state": "Uttar Pradesh",
+                }
+            ]
+        if url.endswith("/forecast"):
             return forecast_payload
         return current_payload
 

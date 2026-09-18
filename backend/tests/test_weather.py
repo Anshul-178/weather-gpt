@@ -17,128 +17,26 @@ from tests.conftest import _mock_provider
 
 @pytest.mark.asyncio
 async def test_current_normalization(monkeypatch, provider_current_payload):
-    """Provider payload is normalized into internal schema correctly."""
+    """OpenWeather payload is normalized into internal schema correctly."""
     _mock_provider(monkeypatch, provider_current_payload, {})
     service = WeatherService()
     result = await service.get_current(26.4499, 80.3319)
 
+    assert result.location.name == "Kanpur"
     assert result.current.temperature == 32.4
     assert result.current.feels_like == 36.1
     assert result.current.humidity == 71
-    assert result.current.wind_speed == 12.5  # km/h preserved
+    assert result.current.wind_speed == pytest.approx(12.5, abs=0.01)  # m/s → km/h
     assert result.current.wind_direction_compass == "S"
     assert result.current.visibility == 12.0  # metres → km
-    assert result.current.condition == "Partly cloudy"
-    assert result.current.weather_code == 2
+    assert result.current.condition == "scattered clouds"
+    assert result.current.weather_code == 2  # OpenWeather 802 → WMO 2
     assert result.current.is_day is True
 
 
 @pytest.mark.asyncio
-async def test_openweathermap_current_normalization(monkeypatch):
-    """OpenWeather current data is normalized into the existing API schema."""
-    payload = {
-        "coord": {"lon": 80.3319, "lat": 26.4499},
-        "weather": [{"id": 800, "main": "Clear", "description": "clear sky"}],
-        "main": {
-            "temp": 32.4,
-            "feels_like": 36.1,
-            "pressure": 1005,
-            "humidity": 71,
-        },
-        "visibility": 12000,
-        "wind": {"speed": 3.472222, "deg": 180},
-        "clouds": {"all": 5},
-        "sys": {"country": "IN", "sunrise": 1, "sunset": 9999999999},
-        "dt": 1700000000,
-        "name": "Kanpur",
-    }
-
-    monkeypatch.setattr(
-        weather_module.settings,
-        "weather_api_base_url",
-        "https://api.openweathermap.org/data/2.5",
-    )
-
-    async def fake_request(self, url, params):
-        assert url.endswith("/weather")
-        assert params["units"] == "metric"
-        return payload
-
-    monkeypatch.setattr(weather_module.WeatherService, "_request", fake_request)
-    result = await WeatherService().get_current(26.4499, 80.3319)
-
-    assert result.location.name == "Kanpur"
-    assert result.current.temperature == 32.4
-    assert result.current.wind_speed == pytest.approx(12.5, abs=0.01)
-    assert result.current.visibility == 12.0
-    assert result.current.condition == "clear sky"
-
-
-@pytest.mark.asyncio
-async def test_openweathermap_forecast_normalization(monkeypatch):
-    """OpenWeather 3-hour points are grouped into daily forecast points."""
-    payload = {
-        "city": {
-            "name": "Kanpur",
-            "coord": {"lon": 80.3319, "lat": 26.4499},
-            "country": "IN",
-        },
-        "list": [
-            {
-                "dt_txt": "2026-09-14 09:00:00",
-                "main": {"temp": 30.0, "feels_like": 31.0, "humidity": 60},
-                "weather": [{"id": 800, "main": "Clear", "description": "clear sky"}],
-                "wind": {"speed": 2.0},
-                "pop": 0.1,
-                "visibility": 10000,
-            },
-            {
-                "dt_txt": "2026-09-14 12:00:00",
-                "main": {"temp": 34.0, "feels_like": 36.0, "humidity": 55},
-                "weather": [{"id": 801, "main": "Clouds", "description": "few clouds"}],
-                "wind": {"speed": 3.0},
-                "pop": 0.4,
-                "rain": {"3h": 1.2},
-                "visibility": 9000,
-            },
-            {
-                "dt_txt": "2026-09-15 12:00:00",
-                "main": {"temp": 33.0, "feels_like": 35.0, "humidity": 65},
-                "weather": [{"id": 500, "main": "Rain", "description": "light rain"}],
-                "wind": {"speed": 4.0},
-                "pop": 0.7,
-                "visibility": 8000,
-            },
-        ],
-    }
-
-    monkeypatch.setattr(
-        weather_module.settings,
-        "weather_api_base_url",
-        "https://api.openweathermap.org/data/2.5",
-    )
-
-    async def fake_request(self, url, params):
-        assert url.endswith("/forecast")
-        return payload
-
-    monkeypatch.setattr(weather_module.WeatherService, "_request", fake_request)
-    result = await WeatherService().get_forecast(26.4499, 80.3319, days=2)
-
-    assert len(result.forecast) == 2
-    assert result.forecast[0].temperature_max == 34.0
-    assert result.forecast[0].precipitation_probability == 40.0
-    assert len(result.hourly) == 3
-
-
-@pytest.mark.asyncio
 async def test_openweathermap_requires_api_key(monkeypatch):
-    """OpenWeather configuration fails clearly when no key is configured."""
-    monkeypatch.setattr(
-        weather_module.settings,
-        "weather_api_base_url",
-        "https://api.openweathermap.org/data/2.5",
-    )
+    """Missing OpenWeather key fails clearly instead of calling the provider."""
     monkeypatch.setattr(weather_module.settings, "weather_api_key", None)
 
     with pytest.raises(WeatherProviderError, match="WEATHER_API_KEY"):
@@ -230,7 +128,9 @@ async def test_weather_provider_maps_429_to_rate_limit_error(monkeypatch):
         headers = {}  # httpx responses always carry headers
 
         def raise_for_status(self):
-            request = httpx.Request("GET", "https://api.open-meteo.com/v1/forecast")
+            request = httpx.Request(
+                "GET", "https://api.openweathermap.org/data/2.5/weather"
+            )
             raise httpx.HTTPStatusError("rate limited", request=request, response=self)
 
     class _Client:
@@ -254,7 +154,9 @@ async def test_weather_provider_maps_429_to_rate_limit_error(monkeypatch):
 
     monkeypatch.setattr(weather_module, "httpx", _FakeHTTPX)
     with pytest.raises(WeatherRateLimitError) as exc_info:
-        await WeatherService()._request("https://api.open-meteo.com/v1/forecast", {})
+        await WeatherService()._request(
+            "https://api.openweathermap.org/data/2.5/weather", {}
+        )
     assert exc_info.value.retry_after_seconds is None
     assert exc_info.value.from_cooldown is False
 
@@ -293,7 +195,7 @@ async def test_weather_provider_follows_redirects(monkeypatch):
 
     monkeypatch.setattr(weather_module, "httpx", _FakeHTTPX)
     result = await WeatherService()._request(
-        "https://api.open-meteo.com/v1/forecast", {}
+        "https://api.openweathermap.org/data/2.5/weather", {}
     )
 
     assert result == {"ok": True}
@@ -376,17 +278,17 @@ async def test_geocode_success(client, monkeypatch):
     """Location search returns geocoding results."""
 
     async def fake_request(self, url, params):
-        return {
-            "results": [
-                {
-                    "name": "Kanpur",
-                    "latitude": 26.4499,
-                    "longitude": 80.3319,
-                    "country": "India",
-                    "admin1": "Uttar Pradesh",
-                }
-            ]
-        }
+        assert "/direct" in url
+        assert params["q"] == "Kanpur"
+        return [
+            {
+                "name": "Kanpur",
+                "lat": 26.4499,
+                "lon": 80.3319,
+                "country": "IN",
+                "state": "Uttar Pradesh",
+            }
+        ]
 
     monkeypatch.setattr(weather_module.WeatherService, "_request", fake_request)
     response = await client.get("/weather/search?query=Kanpur")
@@ -510,7 +412,9 @@ async def test_weather_service_parses_retry_after_header(monkeypatch):
         headers = {"retry-after": "7"}
 
         def raise_for_status(self):
-            request = httpx.Request("GET", "https://api.open-meteo.com/v1/forecast")
+            request = httpx.Request(
+                "GET", "https://api.openweathermap.org/data/2.5/weather"
+            )
             raise httpx.HTTPStatusError("rate limited", request=request, response=self)
 
     class _Client:
@@ -534,7 +438,9 @@ async def test_weather_service_parses_retry_after_header(monkeypatch):
 
     monkeypatch.setattr(weather_module, "httpx", _FakeHTTPX)
     with pytest.raises(WeatherRateLimitError) as exc_info:
-        await WeatherService()._request("https://api.open-meteo.com/v1/forecast", {})
+        await WeatherService()._request(
+            "https://api.openweathermap.org/data/2.5/weather", {}
+        )
     assert exc_info.value.retry_after_seconds == 7.0
     assert exc_info.value.from_cooldown is False
 
