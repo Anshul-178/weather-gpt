@@ -217,19 +217,26 @@ class WeatherService:
         return response
 
     async def geocode(self, name: str, count: int = 5) -> list[GeoLocation]:
-        """Search for places by name using the OpenWeather geocoding API."""
-        params = {"q": name, "limit": max(1, min(count, 10))}
-        payload = await self._request(f"{settings.geocoding_api_base_url}/direct", params)
+        """Search for places by name using the Open-Meteo geocoding API.
+
+        Open-Meteo is key-free and quota-free. Response shape:
+        {"results": [{"name", "latitude", "longitude", "country",
+        "country_code", "admin1", ...}], "generationtime_ms": ...}
+        with no "results" key when nothing matches.
+        """
+        params = {"name": name, "count": max(1, min(count, 10)), "language": "en", "format": "json"}
+        payload = await self._request(f"{settings.geocoding_api_base_url}/search", params)
         locations: list[GeoLocation] = []
-        for item in payload if isinstance(payload, list) else []:
+        results = payload.get("results") if isinstance(payload, dict) else None
+        for item in results if isinstance(results, list) else []:
             try:
                 locations.append(
                     GeoLocation(
                         name=item.get("name") or name,
-                        latitude=float(item["lat"]),
-                        longitude=float(item["lon"]),
-                        country=item.get("country"),
-                        admin1=item.get("state"),
+                        latitude=float(item["latitude"]),
+                        longitude=float(item["longitude"]),
+                        country=item.get("country") or item.get("country_code"),
+                        admin1=item.get("admin1"),
                     )
                 )
             except (KeyError, TypeError, ValueError):

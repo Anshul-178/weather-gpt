@@ -19,11 +19,25 @@ dependencies:
   flutter_tts: ^4.2.5
   speech_to_text: ^7.4.0
   audioplayers: ^6.7.1
+  flutter_local_notifications: ^19.0.0
+  timezone: ^0.10.0
+  flutter_timezone: ^4.0.0
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.4
 
 flutter:
   uses-material-design: true
+
+# App icon generation: run `dart run flutter_launcher_icons` from
+# mobile/flutter_app after replacing assets/icon_source.jpeg.
+flutter_launcher_icons:
+  image_path: "assets/icon_source.jpeg"
+  android: true
+  web:
+    generate: true
+  windows:
+    generate: true

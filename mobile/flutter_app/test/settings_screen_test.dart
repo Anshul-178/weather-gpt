@@ -16,12 +16,10 @@ Widget _appWithLocation() {
         longitude: -0.1278,
       );
       return app;
-    },        child: MaterialApp(
+    },
+    child: MaterialApp(
       home: Scaffold(
-        body: ConstrainedBox(
-          constraints: const BoxConstraints(maxHeight: 800),
-          child: SettingsScreen(),
-        ),
+        body: SettingsScreen(),
       ),
     ),
   );
@@ -33,8 +31,19 @@ void main() {
     await tester.pump(const Duration(seconds: 2));
     await tester.pump(const Duration(seconds: 1));
 
+    // The settings body is a lazy ListView: most sections are built only
+    // when scrolled into view, so finders must not require on-screen
+    // widgets. A small viewport height makes everything "visible" at once.
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(_appWithLocation());
+    await tester.pump(const Duration(seconds: 2));
+    await tester.pump(const Duration(seconds: 1));
+
     expect(find.text('Activity weather score'), findsOneWidget);
     expect(find.text('Alert notifications'), findsOneWidget);
+    expect(find.text('Daily weather notification'), findsOneWidget);
     expect(find.text('Backend URL'), findsOneWidget);
     expect(find.text('About WeatherGPT'), findsOneWidget);
     expect(find.text('Account & data'), findsOneWidget);
@@ -43,6 +52,9 @@ void main() {
   });
 
   testWidgets('Settings screen shows not-signed-in status', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
     await tester.pumpWidget(_appWithLocation());
     await tester.pump(const Duration(seconds: 2));
     await tester.pump(const Duration(seconds: 1));
@@ -51,11 +63,18 @@ void main() {
   });
 
   testWidgets('Sign out button is disabled when not authenticated', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
     await tester.pumpWidget(_appWithLocation());
     await tester.pump(const Duration(seconds: 2));
     await tester.pump(const Duration(seconds: 1));
 
-    final signOutFinder = find.widgetWithText(OutlinedButton, 'Sign out');
+    // OutlinedButton.icon produces a subclass, so match by subtype.
+    final signOutFinder = find.ancestor(
+      of: find.text('Sign out'),
+      matching: find.bySubtype<OutlinedButton>(),
+    );
     expect(signOutFinder, findsOneWidget);
     final signOut = tester.widget<OutlinedButton>(signOutFinder);
     expect(signOut.onPressed, isNull);

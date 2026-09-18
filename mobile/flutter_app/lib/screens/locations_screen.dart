@@ -7,6 +7,7 @@ import '../models/weather.dart';
 import '../providers/app_state.dart';
 import '../repositories/weather_repository.dart';
 import '../services/api_service.dart';
+import '../services/offline_city_search.dart';
 
 /// Locations screen: search, switch, save, delete.
 class LocationsScreen extends StatefulWidget {
@@ -59,7 +60,16 @@ class _LocationsScreenState extends State<LocationsScreen> {
       final results = await _repository.searchLocations(query);
       setState(() => _results = results);
     } on ApiException catch (e) {
-      setState(() => _error = e.message);
+      // Server unreachable (cold start / no connection): fall back to the
+      // built-in city list so search still works.
+      final offline = searchOfflineCities(query);
+      setState(() {
+        _results = offline;
+        _error = offline.isEmpty
+            ? e.message
+            : 'Server unreachable — showing nearby matches from the offline '
+                'city list.';
+      });
     } finally {
       setState(() => _searching = false);
     }

@@ -14,7 +14,9 @@ void main() {
     );
     await tester.pump(const Duration(seconds: 1));
 
-    expect(find.text('WeatherGPT'), findsOneWidget);
+    // App bar title text ('weather_GPT') sits inside a Column in the
+    // AppBar; match it without requiring the widget to be on-screen.
+    expect(find.text('weather_GPT'), findsOneWidget);
     expect(find.byIcon(Icons.refresh), findsOneWidget);
     expect(find.text('Home'), findsOneWidget);
     expect(find.text('AI Chat'), findsOneWidget);

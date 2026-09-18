@@ -56,9 +56,8 @@ void main() {
       expect(called, 2);
     });
 
-    test('retryable status codes are 408, 429, 500, 502, 503, 504', () {
+    test('retryable status codes are 408, 500, 502, 503, 504', () {
       expect(retryableStatusCodes, contains(408));
-      expect(retryableStatusCodes, contains(429));
       expect(retryableStatusCodes, contains(500));
       expect(retryableStatusCodes, contains(502));
       expect(retryableStatusCodes, contains(503));
@@ -66,6 +65,18 @@ void main() {
       expect(retryableStatusCodes, isNot(contains(400)));
       expect(retryableStatusCodes, isNot(contains(401)));
       expect(retryableStatusCodes, isNot(contains(404)));
+    });
+
+    test('429 is deliberately not retried (provider sends Retry-After)', () async {
+      var called = 0;
+      await expectLater(
+        retry(() async {
+          called++;
+          throw ApiException('rate limited', 429);
+        }),
+        throwsA(isA<ApiException>()),
+      );
+      expect(called, 1);
     });
 
     test('succeeds after one retry', () async {

@@ -28,14 +28,17 @@ class Settings(BaseSettings):
     cors_origins: list[str] = ["*"]  # restrict in production
 
     # --- Weather provider ---
-    # Weather + geocoding: OpenWeather (requires WEATHER_API_KEY).
+    # Weather: OpenWeather (requires WEATHER_API_KEY).
     #   Current weather → https://api.openweathermap.org/data/2.5/weather
     #   5-day forecast  → https://api.openweathermap.org/data/2.5/forecast
-    #   Geocoding       → https://api.openweathermap.org/geo/1.0/direct
+    # Geocoding: Open-Meteo (no key, no quota) — the OpenWeather geocoding
+    #   endpoint started returning HTTP 404 for every query, breaking city
+    #   search, so place search now runs on Open-Meteo.
+    #   Search          → https://geocoding-api.open-meteo.com/v1/search?name=...
     # Historical/climate data stays on the Open-Meteo Archive API (no key).
     weather_api_key: Optional[str] = None
     weather_api_base_url: str = "https://api.openweathermap.org/data/2.5"
-    geocoding_api_base_url: str = "https://api.openweathermap.org/geo/1.0"
+    geocoding_api_base_url: str = "https://geocoding-api.open-meteo.com/v1"
     # Open-Meteo Archive API — the only Open-Meteo service still used
     # (historical observations + climate trends).
     archive_api_base_url: str = "https://archive-api.open-meteo.com/v1"

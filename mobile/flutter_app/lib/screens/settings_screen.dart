@@ -6,6 +6,7 @@ import '../providers/app_state.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../repositories/weather_repository.dart';
 import '../services/api_service.dart';
+import '../services/notification_service.dart';
 
 /// Settings screen: activity scores and preferences.
 class SettingsScreen extends StatefulWidget {
@@ -35,6 +36,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   bool _registeringPush = false;
   String? _pushStatus;
+
+  // Daily weather notification.
+  bool _dailyEnabled = false;
+  TimeOfDay _dailyTime = const TimeOfDay(hour: 8, minute: 0);
+  bool _dailyLoading = false;
+  String? _dailyStatus;
 
   // Backend URL configuration.
   final _apiUrlController = TextEditingController();
@@ -115,6 +122,50 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void initState() {
     super.initState();
     _apiUrlController.text = AppConfig.apiBaseUrl;
+    _loadDailySettings();
+  }
+
+  Future<void> _loadDailySettings() async {
+    final (enabled, time) = await NotificationService.instance.loadDailySettings();
+    if (!mounted) return;
+    setState(() {
+      _dailyEnabled = enabled;
+      _dailyTime = time;
+    });
+  }
+
+  Future<void> _toggleDaily(bool value) async {
+    // Format before any await: BuildContext must not be used across gaps.
+    final formatted = _dailyTime.format(context);
+    setState(() => _dailyLoading = true);
+    String? error;
+    if (value) {
+      error = await NotificationService.instance.enableDaily(_dailyTime);
+    } else {
+      await NotificationService.instance.disableDaily();
+    }
+    if (!mounted) return;
+    setState(() {
+      _dailyLoading = false;
+      _dailyEnabled = value && error == null;
+      _dailyStatus = error ??
+          (value
+              ? 'Daily weather on — every day at $formatted.'
+              : 'Daily weather notification turned off.');
+    });
+  }
+
+  Future<void> _pickDailyTime() async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: _dailyTime,
+    );
+    if (picked == null || !mounted) return;
+    setState(() => _dailyTime = picked);
+    if (_dailyEnabled) {
+      // Re-arm the schedule at the new time.
+      await _toggleDaily(true);
+    }
   }
 
   Future<void> _logout() async {
@@ -281,6 +332,61 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   const SizedBox(height: 10),
                   Text(
                     _pushStatus!,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 24),
+        const _SectionHeader(
+          title: 'Daily weather notification',
+          subtitle: 'A weather summary on this device, every day',
+        ),
+        const SizedBox(height: 10),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Notify me every day'),
+                  subtitle: Text(
+                    NotificationService.isSupported
+                        ? 'Delivers around ${_dailyTime.format(context)} '
+                            'with today\'s forecast for your location.'
+                        : 'Not supported on this platform (use the Android '
+                            'or iOS app).',
+                  ),
+                  value: _dailyEnabled,
+                  onChanged: _dailyLoading
+                      ? null
+                      : (NotificationService.isSupported
+                          ? _toggleDaily
+                          : null),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: NotificationService.isSupported
+                            ? _pickDailyTime
+                            : null,
+                        icon: const Icon(Icons.schedule_rounded),
+                        label: Text('Time: ${_dailyTime.format(context)}'),
+                      ),
+                    ),
+                  ],
+                ),
+                if (_dailyStatus != null) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    _dailyStatus!,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: Theme.of(context).colorScheme.onSurfaceVariant),
                   ),

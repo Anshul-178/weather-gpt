@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -10,10 +12,13 @@ import 'screens/forecast_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/settings_screen.dart';
 import 'services/api_service.dart';
+import 'services/notification_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await AppConfig.init();
+  // Non-blocking: notification scheduling must not delay first paint.
+  unawaited(NotificationService.instance.init());
   runApp(const WeatherGPTApp());
 }
 
@@ -195,6 +200,41 @@ class _Shell extends StatefulWidget {
 class _ShellState extends State<_Shell> {
   int _index = 0;
   bool _dismissedRetryBanner = false;
+  Timer? _dailyNotifyTimer;
+  DateTime? _lastDailyFire;
+
+  @override
+  void initState() {
+    super.initState();
+    // When the app is open at the scheduled minute, deliver today's weather
+    // immediately with fresh content (the OS schedule covers closed-app
+    // delivery; this covers foreground delivery + content refresh).
+    _dailyNotifyTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      _maybeFireDailyNotification();
+    });
+  }
+
+  Future<void> _maybeFireDailyNotification() async {
+    try {
+      final (enabled, time) =
+          await NotificationService.instance.loadDailySettings();
+      final now = DateTime.now();
+      if (!enabled) return;
+      if (now.hour != time.hour || now.minute != time.minute) return;
+      final today = DateTime(now.year, now.month, now.day);
+      if (_lastDailyFire == today) return; // already fired this slot
+      _lastDailyFire = today;
+      await NotificationService.instance.showDailyNow();
+    } catch (_) {
+      // Never let the notification check disturb the UI.
+    }
+  }
+
+  @override
+  void dispose() {
+    _dailyNotifyTimer?.cancel();
+    super.dispose();
+  }
 
   late final List<Widget> _screens = [
     const HomeScreen(),

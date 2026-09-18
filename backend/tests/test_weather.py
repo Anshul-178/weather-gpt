@@ -275,26 +275,42 @@ async def test_days_out_of_range_rejected(client):
 
 @pytest.mark.asyncio
 async def test_geocode_success(client, monkeypatch):
-    """Location search returns geocoding results."""
+    """Location search returns geocoding results (Open-Meteo geocoder)."""
 
     async def fake_request(self, url, params):
-        assert "/direct" in url
-        assert params["q"] == "Kanpur"
-        return [
-            {
-                "name": "Kanpur",
-                "lat": 26.4499,
-                "lon": 80.3319,
-                "country": "IN",
-                "state": "Uttar Pradesh",
-            }
-        ]
+        assert "/search" in url
+        assert params["name"] == "Kanpur"
+        return {
+            "results": [
+                {
+                    "name": "Kanpur",
+                    "latitude": 26.4499,
+                    "longitude": 80.3319,
+                    "country": "India",
+                    "country_code": "IN",
+                    "admin1": "Uttar Pradesh",
+                }
+            ]
+        }
 
     monkeypatch.setattr(weather_module.WeatherService, "_request", fake_request)
     response = await client.get("/weather/search?query=Kanpur")
     assert response.status_code == 200
     results = response.json()["results"]
     assert results and results[0]["name"] == "Kanpur"
+
+
+@pytest.mark.asyncio
+async def test_geocode_no_results(client, monkeypatch):
+    """A valid query with no matches returns an empty list (not a 503)."""
+
+    async def fake_request(self, url, params):
+        return {}  # Open-Meteo omits "results" when nothing matches
+
+    monkeypatch.setattr(weather_module.WeatherService, "_request", fake_request)
+    response = await client.get("/weather/search?query=zzqqxx123notacity")
+    assert response.status_code == 200
+    assert response.json()["results"] == []
 
 
 # ------------------------------------------------------------------ #
