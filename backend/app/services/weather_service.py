@@ -217,26 +217,28 @@ class WeatherService:
         return response
 
     async def geocode(self, name: str, count: int = 5) -> list[GeoLocation]:
-        """Search for places by name using the Open-Meteo geocoding API.
+        """Search for places by name using the OpenWeather geocoding API.
 
-        Open-Meteo is key-free and quota-free. Response shape:
-        {"results": [{"name", "latitude", "longitude", "country",
-        "country_code", "admin1", ...}], "generationtime_ms": ...}
-        with no "results" key when nothing matches.
+        OpenWeather provides geocoding (free), so Open-Meteo is only needed
+        for historical/climate data (see historical_service.py). Response
+        shape — a JSON array, empty when nothing matches:
+        [{"name", "lat", "lon", "state", "country"}, ...]
         """
-        params = {"name": name, "count": max(1, min(count, 10)), "language": "en", "format": "json"}
-        payload = await self._request(f"{settings.geocoding_api_base_url}/search", params)
+        params = {"q": name, "limit": max(1, min(count, 10))}
+        payload = await self._request(
+            f"{settings.geocoding_api_base_url}/direct", params
+        )
         locations: list[GeoLocation] = []
-        results = payload.get("results") if isinstance(payload, dict) else None
-        for item in results if isinstance(results, list) else []:
+        results = payload if isinstance(payload, list) else []
+        for item in results:
             try:
                 locations.append(
                     GeoLocation(
                         name=item.get("name") or name,
-                        latitude=float(item["latitude"]),
-                        longitude=float(item["longitude"]),
-                        country=item.get("country") or item.get("country_code"),
-                        admin1=item.get("admin1"),
+                        latitude=float(item["lat"]),
+                        longitude=float(item["lon"]),
+                        country=item.get("country"),
+                        admin1=item.get("state"),
                     )
                 )
             except (KeyError, TypeError, ValueError):

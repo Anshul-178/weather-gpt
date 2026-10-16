@@ -27,20 +27,19 @@ class Settings(BaseSettings):
     # --- CORS ---
     cors_origins: list[str] = ["*"]  # restrict in production
 
-    # --- Weather provider ---
-    # Weather: OpenWeather (requires WEATHER_API_KEY).
-    #   Current weather → https://api.openweathermap.org/data/2.5/weather
-    #   5-day forecast  → https://api.openweathermap.org/data/2.5/forecast
-    # Geocoding: Open-Meteo (no key, no quota) — the OpenWeather geocoding
-    #   endpoint started returning HTTP 404 for every query, breaking city
-    #   search, so place search now runs on Open-Meteo.
-    #   Search          → https://geocoding-api.open-meteo.com/v1/search?name=...
-    # Historical/climate data stays on the Open-Meteo Archive API (no key).
+    # --- Weather provider (OpenWeather) ---
+    # All live weather data comes from OpenWeather (requires an API key from
+    # https://openweathermap.org/api):
+    #   Current weather  → /data/2.5/weather
+    #   5-day forecast   → /data/2.5/forecast
+    #   Geocoding        → /geo/1.0/direct
+    # Historical/climate data is NOT offered on OpenWeather's standard plan,
+    # so the only Open-Meteo usage in the app is the keyless Archive API
+    # (see app/services/historical_service.py):
+    #   History/climate  → https://archive-api.open-meteo.com/v1/archive
     weather_api_key: Optional[str] = None
     weather_api_base_url: str = "https://api.openweathermap.org/data/2.5"
-    geocoding_api_base_url: str = "https://geocoding-api.open-meteo.com/v1"
-    # Open-Meteo Archive API — the only Open-Meteo service still used
-    # (historical observations + climate trends).
+    geocoding_api_base_url: str = "https://api.openweathermap.org/geo/1.0"
     archive_api_base_url: str = "https://archive-api.open-meteo.com/v1"
     weather_timeout_seconds: float = 10.0
 
@@ -90,7 +89,7 @@ class Settings(BaseSettings):
     # When the weather provider returns 429 (too many requests), serve the
     # best available cached/stale payload instead of failing the request.
     serve_stale_on_provider_rate_limit: bool = True
-    # Do not immediately retry OpenWeather after it has sent a 429 response.
+    # Do not immediately retry the weather provider after a 429 response.
     weather_rate_limit_cooldown_seconds: int = 60
 
     # --- Alerts ---
